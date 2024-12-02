@@ -1,3 +1,157 @@
+param(
+    [switch]$ValidateOnly,
+    [switch]$AutoCreateNetwork
+)
+
+# Function to read required environment variable
+function Get-RequiredEnvValue {
+    param (
+        [string]$key
+    )
+    
+    $envPath = Join-Path $PSScriptRoot "../.env"
+    if (-not (Test-Path $envPath)) {
+        Write-Error "Environment file not found at: $envPath"
+        exit 1
+    }
+    
+    $value = Get-Content $envPath | Where-Object { $_ -match "^$key=" } | ForEach-Object { $_.Split('=')[1] }
+    if (-not $value) {
+        Write-Error "Required environment variable '$key' not found in .env file"
+        exit 1
+    }
+    return $value.Trim('"', "'")
+}
+
+# Function to validate Neo4j container health
+function Test-Neo4jHealth {
+    param (
+        [string]$containerName,
+        [string]$user,
+        [string]$password
+    )
+    
+    Write-Host "Checking Neo4j container health..."
+    
+    # Check if container exists and is running
+    $container = docker ps -q -f name=$containerName
+    if (-not $container) {
+        Write-Error "Neo4j container '$containerName' is not running"
+        return $false
+    }
+    
+    # Test database connection
+    try {
+        $result = docker exec $containerName cypher-shell -u $user -p $password "RETURN 1 as test;"
+        if ($result -match "test") {
+            Write-Host " Neo4j connection successful"
+            return $true
+        }
+    } catch {
+        Write-Error "Failed to connect to Neo4j: $_"
+        return $false
+    }
+    return $false
+}
+
+# Function to validate Docker environment
+function Test-DockerEnvironment {
+    Write-Host "Validating Docker environment..."
+    
+    # Check if Docker is running by attempting a simple command
+    try {
+        docker ps | Out-Null
+        Write-Host " Docker is running"
+    } catch {
+        Write-Error " Docker is not running"
+        return $false
+    }
+    
+    return $true
+}
+
+# Function to manage Docker network
+function Initialize-DockerNetwork {
+    param(
+        [switch]$AutoCreate
+    )
+
+    $networkName = "graph-starz-network"
+    $networkExists = docker network ls --format '{{.Name}}' | Select-String -Pattern "^$networkName`$"
+    
+    if (-not $networkExists) {
+        Write-Host "`nDocker network '$networkName' not found."
+        
+        if ($AutoCreate) {
+            Write-Host "Auto-creating network: $networkName"
+            docker network create $networkName
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host " Network created successfully"
+                return $true
+            } else {
+                Write-Error " Failed to create network"
+                return $false
+            }
+        } else {
+            $createNetwork = Read-Host "Would you like to create it? (y/n)"
+            if ($createNetwork -eq 'y') {
+                Write-Host "Creating Docker network: $networkName"
+                docker network create $networkName
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host " Network created successfully"
+                    return $true
+                } else {
+                    Write-Error " Failed to create network"
+                    return $false
+                }
+            } else {
+                Write-Error " Network is required for deployment"
+                return $false
+            }
+        }
+    } else {
+        Write-Host " Docker network '$networkName' exists"
+        return $true
+    }
+}
+
+# Read required environment variables
+$neo4jUser = Get-RequiredEnvValue "NEO4J_USER"
+$neo4jPassword = Get-RequiredEnvValue "NEO4J_PASSWORD"
+
+# Validate environment and network
+$envValid = Test-DockerEnvironment
+if (-not $envValid) {
+    exit 1
+}
+
+$networkValid = Initialize-DockerNetwork -AutoCreate:$AutoCreateNetwork
+if (-not $networkValid) {
+    exit 1
+}
+
+# If ValidateOnly flag is set, check container health and exit
+if ($ValidateOnly) {
+    $containerName = "neo4j-local"
+    $isHealthy = Test-Neo4jHealth -containerName $containerName -user $neo4jUser -password $neo4jPassword
+    
+    if ($isHealthy) {
+        Write-Host "`n Neo4j environment is healthy and ready"
+        Write-Host "Browser: http://localhost:7474"
+        Write-Host "Bolt: bolt://localhost:7687"
+        exit 0
+    } else {
+        Write-Error " Neo4j environment validation failed"
+        exit 1
+    }
+}
+
+# Verify Docker is running
+if (-not (Get-Process "Docker.Desktop" -ErrorAction SilentlyContinue)) {
+    Write-Error "Docker Desktop is not running. Please start Docker Desktop and try again."
+    exit 1
+}
+
 # Stop and remove existing Neo4j container if it exists
 Write-Host "Cleaning up existing Neo4j container..."
 docker stop neo4j-local 2>$null
@@ -38,13 +192,13 @@ docker run -d --name neo4j-local `
     --volume="$HOME/neo4j/logs:/logs" `
     --volume="$HOME/neo4j/conf:/conf" `
     --volume="$HOME/neo4j/import:/import" `
-    --env NEO4J_AUTH=neo4j/development_password `
+    --env NEO4J_AUTH="${neo4jUser}/${neo4jPassword}" `
     neo4j:5.9.0
 
 # Function to test if Neo4j is ready
 function Test-Neo4jReady {
     try {
-        $result = docker exec neo4j-local cypher-shell -u neo4j -p development_password "RETURN 1;"
+        $result = docker exec neo4j-local cypher-shell -u $neo4jUser -p $neo4jPassword "RETURN 1;"
         return $true
     } catch {
         return $false
@@ -86,7 +240,7 @@ $commands = @(
 
 foreach ($cmd in $commands) {
     Write-Host "Executing: $cmd"
-    docker exec neo4j-local cypher-shell -u neo4j -p development_password "$cmd"
+    docker exec neo4j-local cypher-shell -u $neo4jUser -p $neo4jPassword "$cmd"
 }
 
 # Create sample data
@@ -96,7 +250,7 @@ $sampleDataContent = $sampleDataContent -replace "`r`n", "`n"  # Normalize line 
 $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sampleDataContent))
 
 Write-Host "Executing sample data script..."
-docker exec neo4j-local bash -c "echo $encodedCommand | base64 -d | cypher-shell -u neo4j -p development_password"
+docker exec neo4j-local bash -c "echo $encodedCommand | base64 -d | cypher-shell -u $neo4jUser -p $neo4jPassword"
 
 # Verify the sample data
 Write-Host "Verifying sample data..."
@@ -110,7 +264,7 @@ $verificationQueries = @(
 
 foreach ($query in $verificationQueries) {
     Write-Host "`nExecuting verification query: $query"
-    docker exec neo4j-local cypher-shell -u neo4j -p development_password "$query"
+    docker exec neo4j-local cypher-shell -u $neo4jUser -p $neo4jPassword "$query"
 }
 
 # Export complete graph structure to JSON
@@ -149,7 +303,7 @@ RETURN {
 } as data
 "@
 
-$jsonOutput = docker exec neo4j-local cypher-shell -u neo4j -p development_password "$completeGraphQuery" --format plain
+$jsonOutput = docker exec neo4j-local cypher-shell -u $neo4jUser -p $neo4jPassword "$completeGraphQuery" --format plain
 # Clean and format the JSON
 $cleanJson = $jsonOutput -replace '^data$', '' -replace '^\{', '{' -replace '\n', '' -replace '\r', ''
 $jsonObject = $cleanJson | ConvertFrom-Json
@@ -159,7 +313,7 @@ Write-Host "Graph structure exported to graph_structure.json"
 
 Write-Host "`nNeo4j deployment successful! Database is running with sample data."
 Write-Host "Access Neo4j Browser at: http://localhost:7474"
-Write-Host "Credentials: neo4j/development_password"
+Write-Host "Credentials: $neo4jUser/$neo4jPassword"
 Write-Host "`nSample Cypher queries to explore the data:"
 Write-Host "1. View all images with their attributes:"
 Write-Host "   MATCH (i:Image)-[:HAS_ATTRIBUTE]->(a:Attribute) RETURN i.imageId, collect(a.value)"

@@ -1,0 +1,14 @@
+# Node.js
+Backend/node_modules/
+Backend/.env
+Backend/yarn-error.log
+
+# Neo4j
+Neo4j/data/
+Neo4j/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+.env

@@ -1,0 +1,9 @@
+﻿{
+    "status":  "ready",
+    "maxFileSize":  "10MB",
+    "supportedTypes":  [
+                           "image/jpeg",
+                           "image/png"
+                       ],
+    "timestamp":  "2024-12-02T22:21:48.666Z"
+}
