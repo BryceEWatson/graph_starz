@@ -9,7 +9,8 @@ $ErrorActionPreference = "Continue"
 # Function to read required environment variable
 function Get-RequiredEnvValue {
     param (
-        [string]$key
+        [string]$key,
+        [switch]$AsSecureString
     )
     
     $envPath = Join-Path $PSScriptRoot "../../.env"
@@ -23,78 +24,96 @@ function Get-RequiredEnvValue {
         Write-SafeOutput "Required environment variable '$key' not found in .env file" -IsError
         exit 1
     }
-    return $value.Trim('"', "'")
+    
+    $value = $value.Trim('"', "'")
+    
+    if ($AsSecureString) {
+        return (ConvertTo-SecureString $value -AsPlainText -Force)
+    }
+    
+    return $value
+}
+
+# Function to safely use a secure string
+function Use-SecureString {
+    param (
+        [Parameter(Mandatory=$true)]
+        [SecureString]$SecureString,
+        [Parameter(Mandatory=$true)]
+        [scriptblock]$ScriptBlock
+    )
+    
+    $BSTR = $null
+    $plainText = $null
+    
+    try {
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+        $plainText = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        
+        & $ScriptBlock $plainText
+    }
+    finally {
+        if ($BSTR) {
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        }
+        if ($plainText) {
+            Remove-Variable -Name plainText -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Function to execute Neo4j command securely
+function Invoke-Neo4jCommand {
+    param (
+        [string]$user,
+        [SecureString]$password,
+        [string]$query
+    )
+    
+    $result = $null
+    Use-SecureString -SecureString $password -ScriptBlock {
+        param([string]$plainTextPass)
+        $result = docker exec neo4j-local cypher-shell -u $user -p $plainTextPass $query 2>&1
+        $script:lastExitCode = $LASTEXITCODE
+        return $result
+    }
+    return $result
+}
+
+# Function to manage Docker network
+function Initialize-DockerNetwork {
+    $networkName = "graph-starz-network"
+    Write-SafeOutput "Checking Docker network..."
+    
+    $networkExists = docker network ls --format '{{.Name}}' | Select-String -Pattern "^$networkName`$"
+    if (-not $networkExists) {
+        Write-SafeOutput "[ERROR] Docker network '$networkName' not found. Please run Neo4j/local-deploy.ps1 first" -IsError
+        return $false
+    }
+    
+    Write-SafeOutput "[OK] Docker network exists"
+    return $true
 }
 
 # Function to validate Docker environment
 function Test-DockerEnvironment {
     Write-SafeOutput "Validating Docker environment..."
     
-    # Check if Docker is running with timeout
-    $dockerRunning = $false
-    $job = Start-Job -ScriptBlock { 
+    # Check if Docker is running
+    try {
         docker ps | Out-Null
-        $LASTEXITCODE -eq 0 
-    }
-    
-    if (Wait-Job $job -Timeout 10) {
-        $dockerRunning = Receive-Job $job
-    } else {
-        Write-SafeOutput "[ERROR] Docker check timed out after 10 seconds" -IsError
-        Remove-Job $job -Force
-        return $false
-    }
-    
-    Remove-Job $job -Force
-    
-    if (-not $dockerRunning) {
+        Write-SafeOutput "[OK] Docker is running"
+    } catch {
         Write-SafeOutput "[ERROR] Docker is not running" -IsError
         return $false
     }
-    Write-SafeOutput "[OK] Docker is running"
     
-    # Verify network exists (created by Neo4j deployment)
-    $networkName = "graph-starz-network"
-    $networkExists = docker network ls --format '{{.Name}}' | Select-String -Pattern "^$networkName`$"
-    if (-not $networkExists) {
-        Write-SafeOutput "[ERROR] Docker network '$networkName' not found. Please run Neo4j deployment first" -IsError
+    # Check network
+    if (-not (Initialize-DockerNetwork)) {
         return $false
     }
-    Write-SafeOutput "[OK] Docker network exists"
     
     return $true
-}
-
-# Function to validate Neo4j connection
-function Test-Neo4jConnection {
-    param (
-        [string]$uri,
-        [string]$user,
-        [string]$password
-    )
-    
-    Write-SafeOutput "Validating Neo4j connection..."
-    
-    # Check if Neo4j container is running
-    $neo4jContainer = docker ps -q -f name=neo4j-local
-    if (-not $neo4jContainer) {
-        Write-SafeOutput "[ERROR] Neo4j container is not running. Please start Neo4j first" -IsError
-        return $false
-    }
-    Write-SafeOutput "[OK] Neo4j container is running"
-    
-    # Try to connect to Neo4j
-    try {
-        $result = docker exec neo4j-local cypher-shell -u $user -p $password "RETURN 1 as test;"
-        if ($result -match "test") {
-            Write-SafeOutput "[OK] Successfully connected to Neo4j"
-            return $true
-        }
-    } catch {
-        Write-SafeOutput "[ERROR] Failed to connect to Neo4j: $_" -IsError
-        return $false
-    }
-    return $false
 }
 
 # Function to safely get container logs
@@ -252,6 +271,104 @@ function Test-Endpoints {
     }
 }
 
+# Function to wait for backend to be ready
+function Wait-ForBackend {
+    $maxAttempts = 30
+    $attempt = 1
+    $containerName = "graph-starz-backend"
+    
+    while ($attempt -le $maxAttempts) {
+        Write-SafeOutput "Waiting for backend to start (Attempt $attempt of $maxAttempts)..."
+        
+        # Check if container is still running
+        $status = docker ps -f name=$containerName --format "{{.Status}}"
+        if (-not $status) {
+            Write-SafeOutput "Backend container stopped unexpectedly" -IsError
+            Write-SafeOutput "Container logs:" -IsError
+            docker logs $containerName
+            return $false
+        }
+        
+        # Check container health
+        try {
+            $response = Invoke-WebRequest "http://localhost:${port}/health" -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+                Write-SafeOutput "[OK] Backend is ready"
+                return $true
+            }
+        } catch {
+            # Continue waiting
+        }
+        
+        Start-Sleep -Seconds 1
+        $attempt++
+    }
+    
+    Write-SafeOutput "Backend failed to start properly" -IsError
+    Write-SafeOutput "Container logs:" -IsError
+    docker logs $containerName
+    return $false
+}
+
+# Function to validate Neo4j connection
+function Test-Neo4jConnection {
+    param (
+        [string]$uri,
+        [string]$user,
+        [SecureString]$password
+    )
+    
+    Write-SafeOutput "Validating Neo4j connection..."
+    
+    # Check if Neo4j container is running
+    $neo4jContainer = docker ps -q -f name=neo4j-local
+    if (-not $neo4jContainer) {
+        Write-SafeOutput "[ERROR] Neo4j container is not running. Please start Neo4j first" -IsError
+        return $false
+    }
+    Write-SafeOutput "[OK] Neo4j container is running"
+    
+    # Test basic connectivity
+    Write-SafeOutput "Testing Neo4j connectivity..."
+    $result = Invoke-Neo4jCommand -user $user -password $password -query "RETURN 1 as test"
+    Write-SafeOutput "Neo4j Response: $result"
+    
+    if ($script:lastExitCode -eq 0) {
+        Write-SafeOutput "[OK] Successfully connected to Neo4j"
+        
+        # Test write permissions
+        Write-SafeOutput "Testing Neo4j write permissions..."
+        $result = Invoke-Neo4jCommand -user $user -password $password -query "CREATE (n:TestNode) RETURN true as success"
+        Write-SafeOutput "Neo4j Response (raw): '$result'"
+        
+        # Check if response contains both "success" and "TRUE"
+        $hasSuccess = $result.Contains("success")
+        $hasTrue = $result.Contains("TRUE")
+        Write-SafeOutput "Contains 'success': $hasSuccess"
+        Write-SafeOutput "Contains 'TRUE': $hasTrue"
+        
+        if ($script:lastExitCode -eq 0 -and $hasSuccess -and $hasTrue) {
+            Write-SafeOutput "[OK] Successfully verified Neo4j write permissions"
+            
+            # Clean up test node
+            $result = Invoke-Neo4jCommand -user $user -password $password -query "MATCH (n:TestNode) DELETE n"
+            if ($script:lastExitCode -ne 0) {
+                Write-SafeOutput "[WARN] Failed to clean up test node: $result"
+            }
+            
+            return $true
+        } else {
+            Write-SafeOutput "[ERROR] Failed to verify write permissions. Exit code: $script:lastExitCode" -IsError
+            Write-SafeOutput "Full response: $result" -IsError
+            return $false
+        }
+    } else {
+        Write-SafeOutput "[ERROR] Failed to connect to Neo4j. Exit code: $script:lastExitCode" -IsError
+        Write-SafeOutput "Full response: $result" -IsError
+        return $false
+    }
+}
+
 # Verify Docker environment
 if (-not (Test-DockerEnvironment)) {
     exit 1
@@ -260,12 +377,14 @@ if (-not (Test-DockerEnvironment)) {
 # Read required environment variables
 $port = Get-RequiredEnvValue "PORT"
 $nodeEnv = Get-RequiredEnvValue "NODE_ENV"
-$neo4jUri = Get-RequiredEnvValue "NEO4J_URI"
 $neo4jUser = Get-RequiredEnvValue "NEO4J_USER"
-$neo4jPassword = Get-RequiredEnvValue "NEO4J_PASSWORD"
+$neo4jPassword = Get-RequiredEnvValue "NEO4J_PASSWORD" -AsSecureString
 
-# Validate Neo4j connection
-if (-not (Test-Neo4jConnection -uri $neo4jUri -user $neo4jUser -password $neo4jPassword)) {
+# For local development, Neo4j is accessed via container name
+$neo4jUri = "neo4j://neo4j-local:7687"
+
+# Validate Neo4j connection using local URI for testing
+if (-not (Test-Neo4jConnection -uri "neo4j://localhost:7687" -user $neo4jUser -password $neo4jPassword)) {
     exit 1
 }
 
@@ -286,25 +405,32 @@ docker build -t graph-starz-backend (Join-Path $PSScriptRoot "..") 2>&1 >$null
 
 # Create and start the container
 Write-SafeOutput "Starting container..."
-$containerId = docker run -d `
-    --name graph-starz-backend `
-    --network graph-starz-network `
-    -p "${port}:${port}" `
-    -e NEO4J_URI=$neo4jUri `
-    -e NEO4J_USER=$neo4jUser `
-    -e NEO4J_PASSWORD=$neo4jPassword `
-    -e NODE_ENV=$nodeEnv `
-    -e PORT=$port `
-    graph-starz-backend 2>$null
+Use-SecureString -SecureString $neo4jPassword -ScriptBlock {
+    param([string]$plainTextPass)
+    $script:containerId = docker run -d `
+        --name graph-starz-backend `
+        --network graph-starz-network `
+        -p "${port}:${port}" `
+        -e NEO4J_URI=$neo4jUri `
+        -e NEO4J_USER=$neo4jUser `
+        -e NEO4J_PASSWORD=$plainTextPass `
+        -e NODE_ENV=$nodeEnv `
+        -e PORT=$port `
+        graph-starz-backend 2>$null
+}
 
-if (-not $containerId) {
+if (-not $script:containerId) {
     Write-SafeOutput "Failed to start backend container" -IsError
     exit 1
 }
 
-# Check container health
-if (-not (Test-BackendHealth -containerName "graph-starz-backend" -port $port)) {
-    Write-SafeOutput "Backend failed to start properly" -IsError
+# Wait for backend to be ready
+if (-not (Wait-ForBackend)) {
+    Write-SafeOutput "Container logs before cleanup:" -IsError
+    docker logs graph-starz-backend
+    
+    Write-SafeOutput "Cleaning up failed container..."
+    docker rm -f graph-starz-backend 2>$null
     exit 1
 }
 

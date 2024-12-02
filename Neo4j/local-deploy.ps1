@@ -147,7 +147,13 @@ if ($ValidateOnly) {
 }
 
 # Verify Docker is running
-if (-not (Get-Process "Docker.Desktop" -ErrorAction SilentlyContinue)) {
+try {
+    $null = docker info 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Docker Desktop is not running. Please start Docker Desktop and try again."
+        exit 1
+    }
+} catch {
     Write-Error "Docker Desktop is not running. Please start Docker Desktop and try again."
     exit 1
 }
@@ -187,6 +193,7 @@ Copy-Item "./sample_data.cypher" -Destination "$HOME/neo4j/import/sample_data.cy
 # Start Neo4j container
 Write-Host "Starting Neo4j container..."
 docker run -d --name neo4j-local `
+    --network graph-starz-network `
     --publish=7474:7474 --publish=7687:7687 `
     --volume="$HOME/neo4j/data:/data" `
     --volume="$HOME/neo4j/logs:/logs" `

@@ -1,6 +1,9 @@
 ﻿{
     "status":  "healthy",
-    "timestamp":  "2024-12-02T22:21:48.604Z",
+    "timestamp":  "2024-12-02T23:03:26.123Z",
     "environment":  "development",
-    "version":  "1.0.0"
+    "version":  "1.0.0",
+    "dependencies":  {
+                         "neo4j":  "connected"
+                     }
 }

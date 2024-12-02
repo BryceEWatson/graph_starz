@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const neo4j = require('./db/neo4j');
 require('dotenv').config();
 
 const app = express();
@@ -32,6 +33,35 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+// Initialize database and start server
+async function start() {
+    
+    try {
+        // Initialize Neo4j connection
+        await neo4j.initialize();
+        
+        // Start server
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+}
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received. Closing Neo4j connection...');
+    await neo4j.close();
+    process.exit(0);
 });
+
+process.on('SIGINT', async () => {
+    console.log('SIGINT signal received. Closing Neo4j connection...');
+    await neo4j.close();
+    process.exit(0);
+});
+
+// Start the server
+start();
