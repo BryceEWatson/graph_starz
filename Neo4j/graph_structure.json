@@ -1,0 +1,115 @@
+﻿{
+    "users":  [
+                  {
+                      "createdAt":  "2024-12-02T19:33:15.929Z",
+                      "lastLogin":  "2024-12-02T19:33:15.929Z",
+                      "images":  [
+                                     {
+                                         "uploadedAt":  "2024-12-02T19:33:15.929Z",
+                                         "attributes":  [
+                                                            {
+                                                                "type":  "object",
+                                                                "value":  "mountain"
+                                                            },
+                                                            {
+                                                                "type":  "technique",
+                                                                "value":  "oil_painting"
+                                                            },
+                                                            {
+                                                                "type":  "composition",
+                                                                "value":  "rule_of_thirds"
+                                                            },
+                                                            {
+                                                                "type":  "mood",
+                                                                "value":  "peaceful"
+                                                            },
+                                                            {
+                                                                "type":  "color",
+                                                                "value":  "green"
+                                                            },
+                                                            {
+                                                                "type":  "style",
+                                                                "value":  "impressionist"
+                                                            }
+                                                        ],
+                                         "imageId":  "sample_image_3",
+                                         "url":  "https://storage.googleapis.com/sample/image3.jpg",
+                                         "status":  "processed"
+                                     }
+                                 ],
+                      "userId":  "sample_user_2"
+                  },
+                  {
+                      "createdAt":  "2024-12-02T19:33:15.929Z",
+                      "lastLogin":  "2024-12-02T19:33:15.929Z",
+                      "images":  [
+                                     {
+                                         "uploadedAt":  "2024-12-02T19:33:15.929Z",
+                                         "attributes":  [
+                                                            {
+                                                                "type":  "object",
+                                                                "value":  "mountain"
+                                                            },
+                                                            {
+                                                                "type":  "technique",
+                                                                "value":  "oil_painting"
+                                                            },
+                                                            {
+                                                                "type":  "composition",
+                                                                "value":  "rule_of_thirds"
+                                                            },
+                                                            {
+                                                                "type":  "mood",
+                                                                "value":  "energetic"
+                                                            },
+                                                            {
+                                                                "type":  "color",
+                                                                "value":  "green"
+                                                            },
+                                                            {
+                                                                "type":  "style",
+                                                                "value":  "modern"
+                                                            }
+                                                        ],
+                                         "imageId":  "sample_image_2",
+                                         "url":  "https://storage.googleapis.com/sample/image2.jpg",
+                                         "status":  "processed"
+                                     },
+                                     {
+                                         "uploadedAt":  "2024-12-02T19:33:15.929Z",
+                                         "attributes":  [
+                                                            {
+                                                                "type":  "object",
+                                                                "value":  "tree"
+                                                            },
+                                                            {
+                                                                "type":  "technique",
+                                                                "value":  "oil_painting"
+                                                            },
+                                                            {
+                                                                "type":  "composition",
+                                                                "value":  "rule_of_thirds"
+                                                            },
+                                                            {
+                                                                "type":  "mood",
+                                                                "value":  "peaceful"
+                                                            },
+                                                            {
+                                                                "type":  "color",
+                                                                "value":  "blue"
+                                                            },
+                                                            {
+                                                                "type":  "style",
+                                                                "value":  "impressionist"
+                                                            }
+                                                        ],
+                                         "imageId":  "sample_image_1",
+                                         "url":  "https://storage.googleapis.com/sample/image1.jpg",
+                                         "status":  "processed"
+                                     }
+                                 ],
+                      "userId":  "sample_user_1"
+                  }
+              ],
+    "root":  "root"
+}
