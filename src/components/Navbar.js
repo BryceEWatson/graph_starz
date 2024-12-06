@@ -2,13 +2,12 @@
 
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useTheme } from './ThemeProvider';
+import Image from 'next/image';
 
 export default function Navbar() {
     const { data: session, status } = useSession();
     const { theme, toggleTheme } = useTheme();
     const loading = status === 'loading';
-
-    console.log('Navbar rendering:', { session, status }); // Debug log
 
     return (
         <header className="w-full bg-background dark:bg-dark-background shadow-md">
@@ -28,7 +27,7 @@ export default function Navbar() {
                             {theme === 'dark' ? '🌞' : '🌙'}
                         </button>
                         {loading ? (
-                            <div className="h-10 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                            <div className="h-10 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                         ) : !session ? (
                             <button
                                 onClick={() => signIn('google')}
@@ -38,9 +37,23 @@ export default function Navbar() {
                             </button>
                         ) : (
                             <div className="flex items-center space-x-4">
-                                <span className="text-text dark:text-dark-text">
-                                    {session.user?.name || session.user?.email}
-                                </span>
+                                {session.user?.image ? (
+                                    <div className="relative h-8 w-8">
+                                        <Image
+                                            src={session.user.image}
+                                            alt={session.user.name || 'User avatar'}
+                                            fill
+                                            className="rounded-full object-cover"
+                                            sizes="32px"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
+                                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                            {(session.user?.name || session.user?.email || '?').charAt(0).toUpperCase()}
+                                        </span>
+                                    </div>
+                                )}
                                 <button
                                     onClick={() => signOut()}
                                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"

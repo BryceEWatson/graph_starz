@@ -5,9 +5,11 @@ import * as d3 from 'd3';
 import { setupGraph } from '../lib/d3/setupGraph';
 import { setupInteractions } from '../lib/d3/interactions';
 import { applyStyles } from '../lib/d3/styles';
+import { useTheme } from '../components/ThemeProvider';
 
 export function useD3Graph(data) {
     const svgRef = useRef(null);
+    const { theme } = useTheme();
 
     useEffect(() => {
         if (!svgRef.current || !data) return;
@@ -20,16 +22,16 @@ export function useD3Graph(data) {
         // Clear any existing content
         d3.select(svg).selectAll("*").remove();
 
-        // Create the SVG element and container
+        // Create the SVG element
         const svgElement = d3.select(svg)
             .attr('width', width)
             .attr('height', height);
 
         // Set up the simulation and create graph elements
-        const { simulation, container, nodes, links } = setupGraph(svgElement, data, width, height);
+        const { simulation, nodes, links } = setupGraph(svgElement, data, width, height);
 
         // Apply visual styles and effects
-        applyStyles(svgElement, nodes, links);
+        applyStyles(svgElement, nodes, links, theme);
 
         // Set up interactions (drag, hover, etc.)
         setupInteractions(nodes, links);
@@ -56,7 +58,7 @@ export function useD3Graph(data) {
                 d3.select(svg).selectAll("*").remove();
             }
         };
-    }, [data]);
+    }, [data, theme]);
 
     return svgRef;
 }

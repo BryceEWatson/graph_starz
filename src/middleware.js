@@ -8,6 +8,5 @@ export async function middleware(request) {
         return NextResponse.next();
     }
 
-    // Add any future middleware logic here
     return NextResponse.next();
 }

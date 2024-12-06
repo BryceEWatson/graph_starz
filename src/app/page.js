@@ -1,9 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useD3Graph } from '../hooks/useD3Graph';
+import Link from 'next/link';
+
+console.log('Loading Home component...');
 
 export default function Home() {
+    console.log('Rendering Home component...');
+    const { status } = useSession();
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState(null);
@@ -18,59 +24,80 @@ export default function Home() {
                 setLoading(true);
                 setError(null);
                 setStats(null);
+                setData(null);
+                
+                // Don't fetch if not authenticated
+                if (status !== 'authenticated') {
+                    setLoading(false);
+                    return;
+                }
                 
                 console.log('Fetching graph data...');
                 const response = await fetch('/api/graph');
                 console.log('Response status:', response.status);
                 
                 const responseData = await response.json();
-                console.log('Response data:', JSON.stringify(responseData, null, 2));
                 
                 if (!response.ok) {
-                    const errorMessage = responseData.details || responseData.error || `HTTP error! status: ${response.status}`;
-                    console.error('API error:', errorMessage);
-                    throw new Error(errorMessage);
-                }
-                
-                if (!responseData) {
-                    console.error('No data received from API');
-                    throw new Error('No data received from API');
-                }
-                
-                if (!responseData.nodes || !responseData.links) {
-                    console.error('Missing nodes or links in data:', responseData);
-                    throw new Error('Invalid graph data structure: missing nodes or links');
-                }
-                
-                if (!Array.isArray(responseData.nodes) || !Array.isArray(responseData.links)) {
-                    console.error('Nodes or links are not arrays:', {
-                        nodesType: typeof responseData.nodes,
-                        linksType: typeof responseData.links
-                    });
-                    throw new Error('Invalid graph data structure: nodes or links are not arrays');
-                }
-                
-                if (responseData.nodes.length === 0) {
-                    console.error('No nodes in data');
-                    throw new Error('No graph data available. Please ensure the database is initialized.');
-                }
-                
-                if (responseData.stats) {
-                    console.log('Setting stats:', responseData.stats);
-                    setStats(responseData.stats);
+                    throw new Error(responseData.error || 'Failed to fetch graph data');
                 }
                 
                 setData(responseData);
-                setLoading(false);
+                setStats(responseData.stats);
             } catch (error) {
-                console.error('Failed to render graph:', error);
+                console.error('Error:', error);
                 setError(error.message);
+            } finally {
                 setLoading(false);
             }
         }
         
         fetchAndRenderGraph();
-    }, []);
+    }, [status]); // Re-fetch when auth status changes
+    
+    // Show loading state
+    if (loading && status === 'loading') {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div>Loading...</div>
+            </div>
+        );
+    }
+    
+    // Show sign in prompt if not authenticated
+    if (status === 'unauthenticated') {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="max-w-md w-full space-y-8 p-6">
+                    <div className="text-center">
+                        <h2 className="text-3xl font-extrabold">
+                            Welcome to Graph Starz
+                        </h2>
+                        <p className="mt-2 text-sm text-gray-600">
+                            Please sign in to view and interact with the graph
+                        </p>
+                    </div>
+                    <div className="mt-8 text-center">
+                        <Link
+                            href="/api/auth/signin"
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                        >
+                            Sign In
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    
+    // Show error state
+    if (error) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-red-600">Error: {error}</div>
+            </div>
+        );
+    }
     
     return (
         <main className="flex min-h-screen flex-col items-center justify-between mt-16 p-4 bg-background dark:bg-dark-background">
