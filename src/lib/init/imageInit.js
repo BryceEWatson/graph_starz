@@ -5,7 +5,9 @@ import path from 'path';
 import debug from 'debug';
 import { processImage } from '../image/imageProcessor.js';
 import { analyzeImage } from '../image/imageAnalyzer.js';
-import { saveImageData } from '../neo4j/imageRepository.js';
+import { saveImageData, findSimilarImage } from '../neo4j/imageRepository.js';
+import sharpPhash from 'sharp-phash';
+import { formatHash } from '../utils/imageHash.js';
 
 const log = debug('app:init:images');
 const TEST_USER_ID = 'test-user';
@@ -67,6 +69,15 @@ export async function initializeImages() {
         const processedImage = await processImage(imagePath);
         log('Image processed successfully');
 
+        // Verify that all image sizes were uploaded to GCS
+        const allSizesUploaded = processedImage.images.every(img => 
+          img.metadata.isNewUpload || img.publicUrl.includes(img.size)
+        );
+
+        if (!allSizesUploaded) {
+          throw new Error('Not all image sizes were successfully uploaded to GCS');
+        }
+
         // Analyze the full-size image with Anthropic
         log('Analyzing image with Anthropic API...');
         const fullSizeImage = processedImage.images.find(img => img.size === 'full');
@@ -77,6 +88,43 @@ export async function initializeImages() {
           typeof fullSizeImage.data,
           fullSizeImage.isBase64 ? 'true' : 'false'
         );
+
+        // Debug the image data format
+        log('Full size image data: %s', fullSizeImage.data ? fullSizeImage.data.substring(0, 100) + '...' : 'undefined');
+        
+        // Process image and get perceptual hash
+        if (!fullSizeImage.data) {
+          throw new Error('Full size image data is undefined');
+        }
+
+        // The data is already base64, but we need to add the data URL prefix
+        const imageData = Buffer.from(fullSizeImage.data, 'base64');
+        const pHash = await sharpPhash(imageData);
+        const formattedHash = formatHash(pHash);
+
+        // Check if similar image exists in Neo4j first
+        const existingId = await findSimilarImage(formattedHash);
+        if (existingId) {
+          log('Skipped duplicate image %s with ID: %s', file, existingId);
+          skipCount++;
+          continue;
+        }
+
+        // Verify that all image sizes were uploaded to GCS and none were duplicates
+        const uploadResults = processedImage.images.map(img => ({
+          size: img.size,
+          isNewUpload: img.metadata.isNewUpload,
+          publicUrl: img.publicUrl
+        }));
+
+        const hasDuplicates = uploadResults.some(result => !result.isNewUpload);
+        if (hasDuplicates) {
+          log('Skipping image %s as duplicates found in GCS', file);
+          skipCount++;
+          continue;
+        }
+
+        // Only analyze and save to Neo4j if the image is new in both systems
         const analysis = await analyzeImage(fullSizeImage.data, 'image/webp');
         log('Image analysis completed: %O', {
           title: analysis.title,

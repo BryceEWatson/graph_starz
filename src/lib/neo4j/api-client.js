@@ -28,15 +28,22 @@ async function getDbStats() {
 async function getAttributeDistribution() {
     const session = driver.session();
     try {
+        // First check if we have any nodes
+        const hasNodes = await session.run('MATCH (n) RETURN count(n) as count');
+        if (hasNodes.records[0].get('count').toNumber() === 0) {
+            return [];
+        }
+
         const result = await session.run(`
-            MATCH (a:Attribute)
-            WITH a.type as type, count(a) as count
+            MATCH (n)
+            WHERE any(label IN labels(n) WHERE label IN ['Style', 'Object', 'Color', 'Mood', 'Technique'])
+            WITH labels(n)[0] as type, count(n) as count
             RETURN type, count
             ORDER BY count DESC
         `);
         
         return result.records.map(record => ({
-            type: record.get('type'),
+            type: record.get('type').toLowerCase(),
             count: record.get('count').toNumber()
         }));
     } finally {

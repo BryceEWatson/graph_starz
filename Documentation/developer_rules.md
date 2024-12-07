@@ -1,5 +1,12 @@
 # Developer Rules
 
+## Development Environment
+
+1. **Windows PowerShell**
+   - This project is designed to run in a Windows PowerShell environment
+   - All scripts and commands should be PowerShell compatible
+   - Use appropriate path separators (`\`) for Windows file paths
+
 ## Environment Variables and Configuration
 
 1. **No Default Values**

@@ -15,6 +15,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
     "@auth/core": "^0.37.4",
+    "@google-cloud/storage": "^7.14.0",
     "d3": "^7.9.0",
     "debug": "^4.3.7",
     "dotenv": "^16.4.5",
@@ -23,7 +24,8 @@
     "next-auth": "^4.24.10",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
-    "sharp": "^0.33.2"
+    "sharp": "^0.33.2",
+    "sharp-phash": "^2.2.0"
   },
   "devDependencies": {
     "@types/node": "^20",

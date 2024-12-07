@@ -2,8 +2,6 @@
 const neo4j = require('neo4j-driver');
 const dotenv = require('dotenv');
 const debug = require('debug');
-const fs = require('fs').promises;
-const path = require('path');
 
 const log = debug('db:init');
 
@@ -28,9 +26,20 @@ async function initializeDb() {
 
     try {
         if (process.env.CLEAR_DB === 'true') {
-            log('Clearing all nodes and relationships...');
+            log('Clearing all data...');
+            
+            // Clear Neo4j database
+            log('Clearing Neo4j database...');
             await session.run('MATCH (n) DETACH DELETE n');
             log('Database cleared successfully');
+            
+            // Clear GCS bucket
+            log('Clearing GCS bucket...');
+            const { clearBucket } = await import('../storage/gcs.js');
+            await clearBucket();
+            log('GCS bucket cleared successfully');
+            
+            log('All data cleared successfully');
         }
 
         // Drop existing constraints and indexes
