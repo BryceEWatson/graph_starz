@@ -1,7 +1,6 @@
 'use server';
 
 import Anthropic from '@anthropic-ai/sdk';
-import { imageToBase64 } from './imageProcessor.js';
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error('ANTHROPIC_API_KEY environment variable is required');
@@ -74,13 +73,14 @@ export async function analyzeImage(imageData, mimeType = 'image/webp') {
       }],
       tools: [{
         name: 'extract_image_metadata',
-        description: 'Extract detailed metadata from the analyzed image',
+        description: 'Extract detailed metadata from the analyzed image. Each attribute should be atomic (single concept) to enable better connections between images.',
         input_schema: {
           type: 'object',
           properties: {
             style: {
-              type: 'string',
-              description: 'The dominant artistic style or genre of the image. Be specific but use commonly understood terms.'
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of distinct artistic styles present in the image. Each style should be a single, atomic term (e.g. ["impressionist", "modern"] not "impressionist with modern elements").'
             },
             title: {
               type: 'string',
@@ -89,24 +89,27 @@ export async function analyzeImage(imageData, mimeType = 'image/webp') {
             dominantColors: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Array of dominant colors in the image. Use descriptive color terms that capture the nuance of the colors.'
+              description: 'Array of distinct colors in the image. Each color should be a single, specific term (e.g. ["navy blue", "crimson"] not "various shades of blue").'
             },
             objects: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Main objects, elements, or subjects in the image using common, general terms.'
+              description: 'Array of distinct objects or elements in the image. Each object should be a single, specific term (e.g. ["tree", "mountain"] not "tree near a mountain").'
             },
             mood: {
-              type: 'string',
-              description: 'The overall mood, atmosphere, or emotional quality of the image.'
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of distinct moods or emotions conveyed by the image. Each mood should be a single term (e.g. ["peaceful", "mysterious"] not "peaceful and mysterious").'
             },
             composition: {
-              type: 'string',
-              description: 'The compositional structure or layout of the image.'
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of distinct compositional techniques used in the image. Each technique should be a single term (e.g. ["rule of thirds", "leading lines"] not "rule of thirds with leading lines").'
             },
             technique: {
-              type: 'string',
-              description: 'The primary artistic or photographic technique used in creating the image.'
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of distinct artistic or photographic techniques used. Each technique should be a single term (e.g. ["digital compositing", "color grading"] not "digital compositing with color grading").'
             },
             description: {
               type: 'string',
@@ -121,16 +124,38 @@ export async function analyzeImage(imageData, mimeType = 'image/webp') {
 
     console.log('Anthropic API Response:', JSON.stringify(message, null, 2));
 
+    if (!message?.content?.[0]) {
+      throw new Error('Empty or invalid response from Anthropic API');
+    }
+
     if (message.content[0].type !== 'tool_use') {
-      throw new Error('Unexpected response type from Anthropic API');
+      throw new Error(`Unexpected response type from Anthropic API: ${message.content[0].type}`);
     }
 
     const toolUse = message.content[0];
-    if (toolUse.name !== 'extract_image_metadata') {
-      throw new Error(`Unexpected tool use: ${toolUse.name}`);
+    if (!toolUse?.name || toolUse.name !== 'extract_image_metadata') {
+      throw new Error(`Unexpected tool use: ${toolUse?.name}`);
     }
 
-    return toolUse.input;
+    if (!toolUse?.input || typeof toolUse.input !== 'object') {
+      throw new Error('Invalid or missing tool input');
+    }
+
+    // Ensure all array fields exist and are arrays
+    const input = toolUse.input;
+    const defaultArray = [];
+    input.style = Array.isArray(input.style) ? input.style : defaultArray;
+    input.technique = Array.isArray(input.technique) ? input.technique : defaultArray;
+    input.mood = Array.isArray(input.mood) ? input.mood : defaultArray;
+    input.composition = Array.isArray(input.composition) ? input.composition : defaultArray;
+    input.dominantColors = Array.isArray(input.dominantColors) ? input.dominantColors : defaultArray;
+    input.objects = Array.isArray(input.objects) ? input.objects : defaultArray;
+
+    // Ensure string fields exist
+    input.title = input.title || 'Untitled';
+    input.description = input.description || '';
+
+    return input;
   } catch (error) {
     console.error('Error in analyzeImage:', error);
     throw error;

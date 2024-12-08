@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { initialize, getDriver } from '../../../../lib/neo4j/api-client';
+import { ensureUserExists } from '@/lib/neo4j/imageRepository';
 import debug from 'debug';
 
 const log = debug('auth:nextauth');
@@ -33,77 +33,34 @@ const handler = NextAuth({
         updateAge: 24 * 60 * 60, // 24 hours
     },
     callbacks: {
-        async signIn({ account, profile }) {
-            if (!account?.provider || !profile?.email) {
-                log('Missing account provider or profile email');
-                return false;
-            }
-
-            if (account.provider === "google") {
-                if (!profile.email_verified) {
-                    log('Email not verified:', profile.email);
-                    throw new Error('EmailVerification');
-                }
-                
-                if (!profile.email.endsWith("@gmail.com")) {
-                    log('Non-Gmail account attempted:', profile.email);
-                    throw new Error('AccessDenied');
-                }
-
+        async signIn({ user, account, profile }) {
+            if (account?.provider === 'google') {
                 try {
-                    // Initialize Neo4j
-                    await initialize();
-                    const driver = getDriver();
-                    
-                    if (!driver) {
-                        log('Failed to get Neo4j driver during sign in');
-                        throw new Error('DatabaseError');
+                    if (!profile?.sub) {
+                        console.error('No sub found in Google profile');
+                        return false;
+                    }
+                    if (!profile?.email) {
+                        console.error('No email found in Google profile');
+                        return false;
+                    }
+                    if (!profile.email_verified) {
+                        log('Email not verified:', profile.email);
+                        throw new Error('EmailVerification');
                     }
                     
-                    const session = driver.session();
-                    try {
-                        // Ensure user node index exists
-                        await session.run('CREATE INDEX user_email IF NOT EXISTS FOR (u:User) ON (u.email)');
-                        
-                        // Create or update user node
-                        const result = await session.run(
-                            `
-                            MERGE (u:User {email: $email})
-                            ON CREATE SET 
-                                u.id = $id,
-                                u.createdAt = datetime(),
-                                u.name = $name,
-                                u.picture = $picture
-                            ON MATCH SET
-                                u.lastLogin = datetime(),
-                                u.name = $name,
-                                u.picture = $picture
-                            RETURN u
-                            `,
-                            {
-                                email: profile.email,
-                                id: profile.sub || profile.email,
-                                name: profile.name || null,
-                                picture: profile.picture || null
-                            }
-                        );
-                        
-                        const userNode = result.records[0]?.get('u')?.properties;
-                        if (!userNode) {
-                            throw new Error('Failed to create/update user node');
-                        }
-                        
-                        return true;
-                    } finally {
-                        await session.close();
+                    if (!profile.email.endsWith("@gmail.com")) {
+                        log('Non-Gmail account attempted:', profile.email);
+                        throw new Error('AccessDenied');
                     }
+
+                    // Use the Google-provided sub as the unique ID
+                    const userId = await ensureUserExists(profile.email, profile.name || '', profile.sub);
+                    user.id = userId; // Set the Neo4j user ID
+                    return true;
                 } catch (error) {
-                    log('Error in sign in process:', error);
-                    // Rethrow specific errors
-                    if (error.message === 'EmailVerification' || error.message === 'AccessDenied') {
-                        throw error;
-                    }
-                    throw new Error('DatabaseError');
+                    log('Error ensuring user exists:', error);
+                    return false;
                 }
             }
             return true;
@@ -115,13 +72,16 @@ const handler = NextAuth({
                 token.email = profile.email;
                 token.name = profile.name;
                 token.picture = profile.picture;
+                // Persist the OAuth provider's sub to the token
+                token.sub = profile.sub;
             }
             return token;
         },
         async session({ session, token }) {
             if (token) {
                 session.accessToken = token.accessToken;
-                session.user.id = token.id;
+                // Make sure to pass the provider's sub as the user ID
+                session.user.id = token.sub;
                 session.user.picture = token.picture;
                 session.user.email = token.email;
                 session.user.name = token.name;

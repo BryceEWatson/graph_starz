@@ -2,12 +2,36 @@
 
 import { getDriver } from './client.js';
 
+function normalizeAttribute(attr) {
+  if (!attr || typeof attr !== 'string') {
+    return '';
+  }
+  // Convert to lowercase and trim whitespace
+  return attr.toLowerCase().trim();
+}
+
 export async function saveImageData(imageData, analysis, userId) {
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+  if (!imageData) {
+    throw new Error('imageData is required');
+  }
+  if (!analysis) {
+    throw new Error('analysis is required');
+  }
+
+  console.log('Saving image data to Neo4j...');
+  console.log('User ID:', userId);
+  console.log('Image metadata:', JSON.stringify(imageData.metadata, null, 2));
+  console.log('Analysis:', JSON.stringify(analysis, null, 2));
+
   const driver = await getDriver();
   const session = driver.session();
 
   try {
     // First transaction: Create index if it doesn't exist
+    console.log('Creating index if not exists...');
     await session.executeWrite(async (tx) => {
       await tx.run(`
         CREATE INDEX image_phash_idx IF NOT EXISTS
@@ -16,8 +40,10 @@ export async function saveImageData(imageData, analysis, userId) {
     });
 
     // Second transaction: Check for duplicates and save image data
+    console.log('Checking for duplicates and saving image data...');
     const result = await session.executeWrite(async (tx) => {
       // Check for similar images using database-level comparison
+      console.log('Checking for similar images with pHash:', imageData.metadata.pHash);
       const similarImage = await tx.run(`
         MATCH (i:Image)
         WHERE i.pHash IS NOT NULL
@@ -48,15 +74,31 @@ export async function saveImageData(imageData, analysis, userId) {
       });
 
       if (similarImage.records.length > 0) {
-        return { id: similarImage.records[0].get('i.id'), isNew: false };
+        const similarId = similarImage.records[0].get('i.id');
+        console.log('Found similar image:', similarId);
+        return { id: similarId, isNew: false };
       }
 
       // Create unique ID for the image
       const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log('Creating new image with ID:', imageId);
+
+      // Normalize all attributes (ensure arrays exist and handle null/undefined)
+      const style = (analysis.style || []).map(normalizeAttribute).filter(Boolean);
+      const technique = (analysis.technique || []).map(normalizeAttribute).filter(Boolean);
+      const mood = (analysis.mood || []).map(normalizeAttribute).filter(Boolean);
+      const composition = (analysis.composition || []).map(normalizeAttribute).filter(Boolean);
+      const colors = (analysis.dominantColors || []).map(normalizeAttribute).filter(Boolean);
+      const objects = (analysis.objects || []).map(normalizeAttribute).filter(Boolean);
 
       // Create image node with metadata in a single query
-      await tx.run(`
+      const queryResult = await tx.run(`
+        // Match user
         MATCH (u:User {id: $userId})
+        WITH u
+        WHERE u IS NOT NULL
+
+        // Create image node
         CREATE (i:Image {
           id: $imageId,
           originalName: $originalName,
@@ -64,26 +106,59 @@ export async function saveImageData(imageData, analysis, userId) {
           description: $description,
           width: $width,
           height: $height,
-          style: $style,
-          technique: $technique,
-          mood: $mood,
-          composition: $composition,
           createdAt: datetime(),
           thumbnailUrl: $thumbnailUrl,
           previewUrl: $previewUrl,
           fullUrl: $fullUrl,
           pHash: $pHash
         })
+
+        // Create UPLOADED relationship
         CREATE (u)-[:UPLOADED {timestamp: datetime()}]->(i)
+
+        // Create and link style attributes (if any exist)
         WITH i
-        UNWIND $colors as color
-        MERGE (c:Color {name: color})
-        CREATE (i)-[:HAS_COLOR]->(c)
+        FOREACH (styleValue IN CASE WHEN size($style) > 0 THEN $style ELSE [] END |
+          MERGE (s:Attribute {name: 'style', value: styleValue})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(s)
+        )
+
+        // Create and link technique attributes (if any exist)
         WITH i
-        UNWIND $objects as object
-        MERGE (o:Object {name: object})
-        CREATE (i)-[:CONTAINS]->(o)
-        RETURN i.id
+        FOREACH (techniqueValue IN CASE WHEN size($technique) > 0 THEN $technique ELSE [] END |
+          MERGE (t:Attribute {name: 'technique', value: techniqueValue})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(t)
+        )
+
+        // Create and link mood attributes (if any exist)
+        WITH i
+        FOREACH (moodValue IN CASE WHEN size($mood) > 0 THEN $mood ELSE [] END |
+          MERGE (m:Attribute {name: 'mood', value: moodValue})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(m)
+        )
+
+        // Create and link composition attributes (if any exist)
+        WITH i
+        FOREACH (compositionValue IN CASE WHEN size($composition) > 0 THEN $composition ELSE [] END |
+          MERGE (comp:Attribute {name: 'composition', value: compositionValue})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(comp)
+        )
+
+        // Create and link color attributes (if any exist)
+        WITH i
+        FOREACH (color IN CASE WHEN size($colors) > 0 THEN $colors ELSE [] END |
+          MERGE (c:Attribute {name: 'color', value: color})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(c)
+        )
+
+        // Create and link object attributes (if any exist)
+        WITH i
+        FOREACH (object IN CASE WHEN size($objects) > 0 THEN $objects ELSE [] END |
+          MERGE (o:Attribute {name: 'object', value: object})
+          CREATE (i)-[:HAS_ATTRIBUTE]->(o)
+        )
+
+        RETURN i.id as imageId, count(*) as relationshipCount
       `, {
         userId,
         imageId,
@@ -92,22 +167,27 @@ export async function saveImageData(imageData, analysis, userId) {
         description: analysis.description,
         width: imageData.metadata.width,
         height: imageData.metadata.height,
-        style: analysis.style,
-        technique: analysis.technique,
-        mood: analysis.mood,
-        composition: analysis.composition,
+        style,
+        technique,
+        mood,
+        composition,
         thumbnailUrl: imageData.images.find(img => img.size === 'thumbnail')?.publicUrl,
         previewUrl: imageData.images.find(img => img.size === 'preview')?.publicUrl,
         fullUrl: imageData.images.find(img => img.size === 'full')?.publicUrl,
         pHash: imageData.metadata.pHash,
-        colors: analysis.dominantColors,
-        objects: analysis.objects
+        colors,
+        objects
       });
 
+      console.log('Neo4j query result:', JSON.stringify(queryResult.records, null, 2));
       return { id: imageId, isNew: true };
     });
 
+    console.log('Successfully saved image data:', JSON.stringify(result, null, 2));
     return result;
+  } catch (error) {
+    console.error('Error saving image data to Neo4j:', error);
+    throw error;
   } finally {
     await session.close();
   }
@@ -164,6 +244,35 @@ export async function findSimilarImage(pHash) {
   }
 }
 
+export async function ensureUserExists(email, name, providerId) {
+  const driver = await getDriver();
+  const session = driver.session();
+
+  try {
+    const result = await session.run(`
+      MERGE (u:User {id: $providerId})
+      ON CREATE SET 
+        u.email = $email,
+        u.name = $name,
+        u.createdAt = datetime()
+      ON MATCH SET
+        u.lastLoginAt = datetime(),
+        u.email = $email,
+        u.name = $name
+      RETURN u.id as userId, u.email as email
+    `, {
+      providerId,
+      email,
+      name
+    });
+    
+    console.log('User ensure result:', result.records[0]?.get('email'));
+    return providerId;
+  } finally {
+    await session.close();
+  }
+}
+
 export async function getImageById(imageId) {
   const driver = await getDriver();
   const session = driver.session();
@@ -172,11 +281,8 @@ export async function getImageById(imageId) {
     const result = await session.executeRead(async (tx) => {
       const imageQuery = await tx.run(
         `MATCH (i:Image {id: $imageId})
-         OPTIONAL MATCH (i)-[:HAS_COLOR]->(c:Color)
-         OPTIONAL MATCH (i)-[:CONTAINS]->(o:Object)
-         RETURN i,
-                collect(DISTINCT c.name) as dominantColors,
-                collect(DISTINCT o.name) as objects`,
+         OPTIONAL MATCH (i)-[:HAS_ATTRIBUTE]->(a:Attribute)
+         RETURN i, collect(DISTINCT {name: a.name, value: a.value}) as attributes`,
         { imageId }
       );
 
@@ -186,11 +292,11 @@ export async function getImageById(imageId) {
 
       const record = imageQuery.records[0];
       const image = record.get('i').properties;
+      const attributes = record.get('attributes');
 
       return {
         ...image,
-        dominantColors: record.get('dominantColors'),
-        objects: record.get('objects')
+        attributes
       };
     });
 

@@ -17,6 +17,8 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
     const file = formData.get('file');
+    const skipGCS = formData.get('skipGCS') === 'true';
+    const title = formData.get('title');
     
     if (!file) {
       return NextResponse.json(
@@ -34,7 +36,7 @@ export async function POST(request) {
     const binaryHash = await sharpPhash(buffer);
     const pHash = formatHash(binaryHash);
 
-    // Process image in different sizes and upload to GCS
+    // Process image in different sizes
     const processedImages = await Promise.all(
       Object.entries(SIZES).map(async ([size, width]) => {
         // Process image
@@ -47,9 +49,22 @@ export async function POST(request) {
           .webp({ quality: 80 })
           .toBuffer();
 
-        // Generate filename using the original name for now (will be updated with AI title later)
+        if (skipGCS) {
+          return {
+            size,
+            data: processedBuffer.toString('base64'),
+            isBase64: true,
+            metadata: {
+              width: width,
+              height: Math.round(width * (metadata.height / metadata.width)),
+              format: 'webp'
+            }
+          };
+        }
+
+        // Generate filename using the AI title if available
         const filename = generateImageFilename(
-          originalName.replace(/\.[^/.]+$/, ''), // Remove extension
+          title || originalName.replace(/\.[^/.]+$/, ''), // Remove extension
           size
         );
 

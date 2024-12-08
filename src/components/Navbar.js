@@ -3,6 +3,7 @@
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useTheme } from './ThemeProvider';
 import Image from 'next/image';
+import UploadButton from './UploadButton';
 
 export default function Navbar() {
     const { data: session, status } = useSession();
@@ -37,6 +38,7 @@ export default function Navbar() {
                             </button>
                         ) : (
                             <div className="flex items-center space-x-4">
+                                <UploadButton />
                                 {session.user?.image ? (
                                     <div className="relative h-8 w-8">
                                         <Image
