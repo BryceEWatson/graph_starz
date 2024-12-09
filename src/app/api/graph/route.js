@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { initialize, getDriver } from '../../../lib/neo4j/api-client';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/options';
 import debug from 'debug';
 
 const log = debug('graph:api');
@@ -21,10 +22,10 @@ function convertNeo4jIntegers(obj) {
     return obj;
 }
 
-export async function GET(request) {
+export async function GET() {
     try {
         // Check authentication
-        const authSession = await getServerSession();
+        const authSession = await getServerSession(authOptions);
         if (!authSession?.user?.email) {
             log('Unauthorized access attempt');
             return NextResponse.json(
@@ -104,14 +105,17 @@ export async function GET(request) {
                             END,
                             name: CASE
                                 WHEN node:User THEN node.email
-                                WHEN node:Image THEN node.title
+                                WHEN node:Image THEN COALESCE(node.title, 'Untitled Image')
                                 WHEN node:Attribute THEN node.value
                                 ELSE ''
                             END,
                             properties: {
                                 id: node.id,
                                 email: node.email,
-                                title: node.title,
+                                title: CASE
+                                    WHEN node:Image THEN COALESCE(node.title, 'Untitled Image')
+                                    ELSE null
+                                END,
                                 thumbnailUrl: node.thumbnailUrl,
                                 previewUrl: node.previewUrl,
                                 fullUrl: node.fullUrl,

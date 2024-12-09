@@ -93,7 +93,8 @@ export async function POST(request) {
         height: metadata.height,
         format: metadata.format,
         originalName,
-        pHash
+        pHash,
+        title
       }
     });
 

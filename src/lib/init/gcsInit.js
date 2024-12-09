@@ -5,12 +5,10 @@ import debug from 'debug';
 import path from 'path';
 import fs from 'fs/promises';
 import { uploadToGCS } from '../storage/gcs.js';
-import sharpPhash from 'sharp-phash';
-import { formatHash } from '../utils/imageHash.js';
 
 const log = debug('app:init:gcs');
 
-export async function initializeGCS() {
+export const initialize = async () => {
   log('Starting Firebase Storage initialization check...');
 
   try {
@@ -50,47 +48,50 @@ export async function initializeGCS() {
     // Test duplicate detection
     log('Testing duplicate detection...');
     const testImagesDir = path.join(process.cwd(), 'test_images');
-    const testFiles = await fs.readdir(testImagesDir);
-    
-    if (testFiles.length > 0) {
-      // Get the first test image
-      const testImagePath = path.join(testImagesDir, testFiles[0]);
-      const imageBuffer = await fs.readFile(testImagePath);
+    try {
+      const testFiles = await fs.readdir(testImagesDir);
       
-      // Calculate hash directly to check its size
-      const binaryHash = await sharpPhash(imageBuffer);
-      const hash = formatHash(binaryHash);
-      log('Perceptual hash:', hash);
-      log('Hash length:', hash.length, 'characters');
-      log('Hash format valid:', /^[0-9a-f]{16}$/i.test(hash), '(should be 16 hex chars)');
-      
-      // Upload the same image twice
-      log('Uploading test image first time...');
-      const firstUpload = await uploadToGCS(imageBuffer, 'test-duplicate-1.webp');
-      log('First upload complete, URL:', firstUpload.url);
-      
-      log('Uploading same image second time...');
-      const secondUpload = await uploadToGCS(imageBuffer, 'test-duplicate-2.webp');
-      log('Second upload complete, URL:', secondUpload.url);
-      
-      if (!secondUpload.isNew && firstUpload.url === secondUpload.url) {
-        log('Duplicate detection successful! Both uploads returned the same URL');
-      } else if (secondUpload.isNew) {
-        log('Warning: Duplicate detection failed - image was uploaded twice');
-      } else if (firstUpload.url !== secondUpload.url) {
-        log('Warning: Duplicate detection returned different URLs for same image');
+      if (testFiles.length > 0) {
+        // Get the first test image
+        const testImagePath = path.join(testImagesDir, testFiles[0]);
+        const imageBuffer = await fs.readFile(testImagePath);
+        
+        // Upload test image twice to verify duplicate detection
+        log('Testing duplicate detection with test image...');
+        const firstUpload = await uploadToGCS(imageBuffer, 'test-duplicate-1.webp');
+        const secondUpload = await uploadToGCS(imageBuffer, 'test-duplicate-2.webp');
+        
+        const duplicateDetectionWorking = !secondUpload.isNew && firstUpload.url === secondUpload.url;
+        if (!duplicateDetectionWorking) {
+          log('Warning: Duplicate detection test failed');
+          return {
+            success: true,
+            message: 'Firebase Storage connection verified',
+            warnings: ['Duplicate detection not working as expected']
+          };
+        }
       }
-    } else {
-      log('No test images found for duplicate detection test');
+    } catch (error) {
+      log('Warning: Could not test duplicate detection:', error.message);
+      return {
+        success: true,
+        message: 'Firebase Storage connection verified',
+        warnings: ['Could not test duplicate detection']
+      };
     }
 
     log('Firebase Storage initialization successful');
     return {
-      status: 'success',
-      message: 'Firebase Storage connection verified'
+      success: true,
+      message: 'Firebase Storage connection verified',
+      warnings: []
     };
   } catch (error) {
     log('Firebase Storage initialization failed:', error);
-    throw error;
+    return {
+      success: false,
+      error: error.message,
+      warnings: []
+    };
   }
 }

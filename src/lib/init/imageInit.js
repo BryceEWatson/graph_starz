@@ -3,25 +3,27 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import debug from 'debug';
-import { processImage } from '../image/imageProcessor.js';
-import { analyzeImage } from '../image/imageAnalyzer.js';
-import { saveImageData, findSimilarImage } from '../neo4j/imageRepository.js';
-import sharpPhash from 'sharp-phash';
-import { formatHash } from '../utils/imageHash.js';
 
 const log = debug('app:init:images');
-const TEST_USER_ID = 'test-user';
 
 // Use path.join for cross-platform compatibility
 const TEST_IMAGES_DIR = path.join(process.cwd(), 'test_images');
 
-export async function initializeImages() {
+/**
+ * Initialize test images by uploading them through the standard upload flow
+ * @param {string} testUserId - ID of the test user to use for uploads
+ */
+export async function initializeImages(testUserId) {
   log('Starting image initialization check...');
   
   // Only run in development or during first production startup
   if (process.env.SKIP_IMAGE_INIT === 'true') {
     log('SKIP_IMAGE_INIT is true, skipping image initialization');
-    return;
+    return { success: true, processed: 0, skipped: 0, errors: 0 };
+  }
+
+  if (!testUserId) {
+    throw new Error('testUserId is required for image initialization');
   }
 
   try {
@@ -64,109 +66,72 @@ export async function initializeImages() {
         const imagePath = path.join(TEST_IMAGES_DIR, file);
         log('Processing image: %s', file);
 
-        // Process image into different sizes
-        log('Converting image to WebP and resizing...');
-        const processedImage = await processImage(imagePath);
-        log('Image processed successfully');
-
-        // Verify that all image sizes were uploaded to GCS
-        const allSizesUploaded = processedImage.images.every(img => 
-          img.metadata.isNewUpload || img.publicUrl.includes(img.size)
-        );
-
-        if (!allSizesUploaded) {
-          throw new Error('Not all image sizes were successfully uploaded to GCS');
+        // Skip non-image files
+        if (!/\.(jpg|jpeg|png|webp)$/i.test(file)) {
+          log('Skipping non-image file: %s', file);
+          continue;
         }
 
-        // Analyze the full-size image with Anthropic
-        log('Analyzing image with Anthropic API...');
-        const fullSizeImage = processedImage.images.find(img => img.size === 'full');
-        if (!fullSizeImage) {
-          throw new Error('Failed to find full-size processed image');
-        }
-        log('Full size image data type: %s, isBase64: %s', 
-          typeof fullSizeImage.data,
-          fullSizeImage.isBase64 ? 'true' : 'false'
-        );
-
-        // Debug the image data format
-        log('Full size image data: %s', fullSizeImage.data ? fullSizeImage.data.substring(0, 100) + '...' : 'undefined');
+        // Read the image file and create a File object
+        const imageBuffer = await fs.readFile(imagePath);
         
-        // Process image and get perceptual hash
-        if (!fullSizeImage.data) {
-          throw new Error('Full size image data is undefined');
-        }
+        // Determine content type from file extension
+        const ext = path.extname(file).toLowerCase();
+        const contentType = ext === '.png' ? 'image/png' :
+                          ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+                          ext === '.webp' ? 'image/webp' :
+                          'image/png'; // default to png
+        
+        // Create FormData and append the buffer with correct type
+        const formData = new FormData();
+        formData.append('file', new Blob([imageBuffer], { type: contentType }), 
+                       file.replace(/[^a-zA-Z0-9-_\.]|\.(?!(jpg|jpeg|png|webp)$)/gi, '_'));
 
-        // The data is already base64, but we need to add the data URL prefix
-        const imageData = Buffer.from(fullSizeImage.data, 'base64');
-        const pHash = await sharpPhash(imageData);
-        const formattedHash = formatHash(pHash);
-
-        // Check if similar image exists in Neo4j first
-        const existingId = await findSimilarImage(formattedHash);
-        if (existingId) {
-          log('Skipped duplicate image %s with ID: %s', file, existingId);
-          skipCount++;
-          continue;
-        }
-
-        // Verify that all image sizes were uploaded to GCS and none were duplicates
-        const uploadResults = processedImage.images.map(img => ({
-          size: img.size,
-          isNewUpload: img.metadata.isNewUpload,
-          publicUrl: img.publicUrl
-        }));
-
-        const hasDuplicates = uploadResults.some(result => !result.isNewUpload);
-        if (hasDuplicates) {
-          log('Skipping image %s as duplicates found in GCS', file);
-          skipCount++;
-          continue;
-        }
-
-        // Only analyze and save to Neo4j if the image is new in both systems
-        const analysis = await analyzeImage(fullSizeImage.data, 'image/webp');
-        log('Image analysis completed: %O', {
-          title: analysis.title,
-          style: analysis.style,
-          objectCount: analysis.objects.length,
-          colorCount: analysis.dominantColors.length,
-          technique: analysis.technique
+        // Get base URL from environment or default to localhost in development
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+        
+        // Call the upload endpoint with absolute URL
+        const response = await fetch(`${baseUrl}/api/images/upload`, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-Test-User': testUserId
+          }
         });
 
-        // Save to Neo4j with test user
-        log('Saving image data to Neo4j...');
-        const result = await saveImageData(processedImage, analysis, TEST_USER_ID);
+        const result = await response.json();
 
-        if (result.isNew) {
-          log('Successfully processed and saved %s with ID: %s', file, result.id);
-          successCount++;
-        } else {
-          log('Skipped duplicate image %s with ID: %s', file, result.id);
+        if (response.status === 409) {
+          log('Skipped duplicate image: %s (ID: %s)', file, result.existingImageId);
           skipCount++;
+        } else if (!response.ok) {
+          throw new Error(
+            `Upload failed (${response.status}): ${result.message || result.error || 'Unknown error'}`
+          );
+        } else {
+          log('Successfully processed image: %s (ID: %s)', file, result.id);
+          successCount++;
         }
       } catch (error) {
         log('Error processing %s: %O', file, error);
         errorCount++;
-        // Don't throw here, continue processing other images
       }
     }
 
+    // Log summary
     log('\nImage initialization summary:');
     log('- Successfully processed: %d', successCount);
     log('- Skipped duplicates: %d', skipCount);
     log('- Errors encountered: %d', errorCount);
 
-    // If no images were processed successfully, consider this a failure
-    if (successCount === 0 && errorCount > 0) {
-      throw new Error(`Failed to process any images. Errors: ${errorCount}`);
-    }
-
+    // Return success if we either processed or skipped images
     return {
-      successCount,
-      skipCount,
-      errorCount
+      success: successCount > 0 || skipCount > 0,
+      processed: successCount,
+      skipped: skipCount,
+      errors: errorCount
     };
+
   } catch (error) {
     log('Fatal error during image initialization: %O', error);
     throw error;

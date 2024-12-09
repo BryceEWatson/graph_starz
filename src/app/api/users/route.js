@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { initialize, getDriver } from '../../../lib/neo4j/api-client';
 import debug from 'debug';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '../auth/[...nextauth]/options';
 
 const log = debug('users:api');
 
@@ -11,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request) {
     try {
         // Get the authenticated session
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
             log('No valid session found');
             return NextResponse.json(
@@ -89,10 +90,10 @@ export async function POST(request) {
     }
 }
 
-export async function GET() {
+export async function GET(request) {
     try {
         // Get the authenticated session
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
         if (!session?.user?.email) {
             log('No valid session found');
             return NextResponse.json(

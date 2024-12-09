@@ -25,6 +25,8 @@ export async function saveImageData(imageData, analysis, userId) {
   console.log('User ID:', userId);
   console.log('Image metadata:', JSON.stringify(imageData.metadata, null, 2));
   console.log('Analysis:', JSON.stringify(analysis, null, 2));
+  console.log('Title from analysis:', analysis.title);
+  console.log('Title from metadata:', imageData.metadata.title);
 
   const driver = await getDriver();
   const session = driver.session();
@@ -101,80 +103,83 @@ export async function saveImageData(imageData, analysis, userId) {
         // Create image node
         CREATE (i:Image {
           id: $imageId,
-          originalName: $originalName,
           title: $title,
           description: $description,
+          originalName: $originalName,
           width: $width,
           height: $height,
-          createdAt: datetime(),
+          pHash: $pHash,
           thumbnailUrl: $thumbnailUrl,
           previewUrl: $previewUrl,
           fullUrl: $fullUrl,
-          pHash: $pHash
+          uploadedAt: $uploadedAt,
+          createdAt: datetime()
         })
 
-        // Create UPLOADED relationship
-        CREATE (u)-[:UPLOADED {timestamp: datetime()}]->(i)
+        // Create relationships
+        WITH i, u
+        CREATE (u)-[:UPLOADED]->(i)
 
-        // Create and link style attributes (if any exist)
+        // Create style relationships
         WITH i
-        FOREACH (styleValue IN CASE WHEN size($style) > 0 THEN $style ELSE [] END |
-          MERGE (s:Attribute {name: 'style', value: styleValue})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(s)
+        FOREACH (styleName IN $style |
+          MERGE (s:Style {name: styleName})
+          CREATE (i)-[:HAS_STYLE]->(s)
         )
 
-        // Create and link technique attributes (if any exist)
+        // Create technique relationships
         WITH i
-        FOREACH (techniqueValue IN CASE WHEN size($technique) > 0 THEN $technique ELSE [] END |
-          MERGE (t:Attribute {name: 'technique', value: techniqueValue})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(t)
+        FOREACH (techniqueName IN $technique |
+          MERGE (t:Technique {name: techniqueName})
+          CREATE (i)-[:USES_TECHNIQUE]->(t)
         )
 
-        // Create and link mood attributes (if any exist)
+        // Create mood relationships
         WITH i
-        FOREACH (moodValue IN CASE WHEN size($mood) > 0 THEN $mood ELSE [] END |
-          MERGE (m:Attribute {name: 'mood', value: moodValue})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(m)
+        FOREACH (moodName IN $mood |
+          MERGE (m:Mood {name: moodName})
+          CREATE (i)-[:HAS_MOOD]->(m)
         )
 
-        // Create and link composition attributes (if any exist)
+        // Create composition relationships
         WITH i
-        FOREACH (compositionValue IN CASE WHEN size($composition) > 0 THEN $composition ELSE [] END |
-          MERGE (comp:Attribute {name: 'composition', value: compositionValue})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(comp)
+        FOREACH (compositionName IN $composition |
+          MERGE (c:Composition {name: compositionName})
+          CREATE (i)-[:HAS_COMPOSITION]->(c)
         )
 
-        // Create and link color attributes (if any exist)
+        // Create color relationships
         WITH i
-        FOREACH (color IN CASE WHEN size($colors) > 0 THEN $colors ELSE [] END |
-          MERGE (c:Attribute {name: 'color', value: color})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(c)
+        FOREACH (colorName IN $colors |
+          MERGE (c:Color {name: colorName})
+          CREATE (i)-[:HAS_COLOR]->(c)
         )
 
-        // Create and link object attributes (if any exist)
+        // Create object relationships
         WITH i
-        FOREACH (object IN CASE WHEN size($objects) > 0 THEN $objects ELSE [] END |
-          MERGE (o:Attribute {name: 'object', value: object})
-          CREATE (i)-[:HAS_ATTRIBUTE]->(o)
+        FOREACH (objectName IN $objects |
+          MERGE (o:Object {name: objectName})
+          CREATE (i)-[:CONTAINS_OBJECT]->(o)
         )
 
-        RETURN i.id as imageId, count(*) as relationshipCount
+        RETURN i.id as id
       `, {
-        userId,
         imageId,
+        userId,
+        title: analysis.title || 'Untitled Image',
+        description: analysis.description || '',
         originalName: imageData.metadata.originalName,
-        title: analysis.title,
-        description: analysis.description,
         width: imageData.metadata.width,
         height: imageData.metadata.height,
+        pHash: imageData.metadata.pHash,
+        thumbnailUrl: imageData.urls.thumbnail,
+        previewUrl: imageData.urls.preview,
+        fullUrl: imageData.urls.full,
+        uploadedAt: imageData.metadata.uploadedAt,
         style,
         technique,
         mood,
         composition,
-        thumbnailUrl: imageData.images.find(img => img.size === 'thumbnail')?.publicUrl,
-        previewUrl: imageData.images.find(img => img.size === 'preview')?.publicUrl,
-        fullUrl: imageData.images.find(img => img.size === 'full')?.publicUrl,
-        pHash: imageData.metadata.pHash,
         colors,
         objects
       });

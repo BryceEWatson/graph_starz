@@ -72,7 +72,7 @@ export function applyStyles(svgElement, nodes, links, theme) {
                 case 'user':
                     return d.name || d.email || 'User';
                 case 'image':
-                    return d.title || d.originalName || 'Untitled Image';
+                    return d.name || d.properties?.title || 'Untitled Image';
                 case 'color':
                     return `Color: ${d.name || d.properties?.name}`;
                 case 'object':

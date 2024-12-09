@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import UploadModal from './UploadModal';
+import { useRouter } from 'next/navigation';
 
 export default function UploadButton() {
     const [isUploading, setIsUploading] = useState(false);
@@ -10,6 +11,7 @@ export default function UploadButton() {
     const [uploadStatus, setUploadStatus] = useState('');
     const [imagePreview, setImagePreview] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const router = useRouter();
 
     const handleFileSelect = async (event) => {
         const file = event.target.files?.[0];
@@ -38,16 +40,32 @@ export default function UploadButton() {
                 body: formData,
             });
 
+            const result = await response.json();
+            
             if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
+                if (response.status === 409) {
+                    // Duplicate image detected
+                    setUploadStatus('Image already exists in your collection');
+                    setTimeout(() => {
+                        setShowModal(false);
+                        setIsUploading(false);
+                        setUploadProgress(0);
+                        setUploadStatus('');
+                        setImagePreview('');
+                    }, 3000);
+                    return;
+                }
+                throw new Error(`Upload failed: ${result.message || response.statusText}`);
             }
 
-            const result = await response.json();
             console.log('Upload successful:', result);
 
             // Update status
             setUploadStatus('Upload complete!');
             setUploadProgress(100);
+
+            // Refresh the graph data
+            router.refresh();
 
             // Close modal after a delay
             setTimeout(() => {
@@ -56,6 +74,9 @@ export default function UploadButton() {
                 setUploadProgress(0);
                 setUploadStatus('');
                 setImagePreview('');
+
+                // Force a hard refresh after the modal closes
+                window.location.reload();
             }, 1500);
 
             // Clear the file input

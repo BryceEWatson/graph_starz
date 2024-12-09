@@ -8,32 +8,30 @@ console.log('[NEO4J] Module loaded at:', new Date().toISOString(), 'Environment:
 
 /**
  * Get the Neo4j driver instance
+ * @returns {Promise<object>} The Neo4j driver instance
  */
-export async function getDriver() {
+export const getDriver = async () => {
     if (!driver) {
         await initialize();
     }
     return driver;
-}
+};
 
 /**
  * Initialize Neo4j driver with the given configuration
+ * @returns {Promise<void>}
  */
-export async function initialize() {
-    console.log('[NEO4J] Initialize called at:', new Date().toISOString());
-    
-    // Only import neo4j-driver when we actually need it
+export const initialize = async () => {
     if (!neo4j) {
-        neo4j = (await import('neo4j-driver')).default;
-    }
-    
-    if (driver) {
-        console.log('[NEO4J] Driver already initialized');
-        return driver;
+        neo4j = await import('neo4j-driver');
     }
 
     if (!process.env.NEO4J_URI || !process.env.NEO4J_USER || !process.env.NEO4J_PASSWORD) {
-        throw new Error('Missing required Neo4j environment variables');
+        throw new Error('Missing Neo4j environment variables');
+    }
+
+    if (driver) {
+        return;
     }
 
     try {
@@ -45,64 +43,68 @@ export async function initialize() {
                 connectionAcquisitionTimeout: 2000,
             }
         );
-        console.log('[NEO4J] Driver initialized successfully');
-        
-        // Verify connectivity
+
+        // Test the connection
         await validateConnection();
-        
-        return driver;
     } catch (error) {
-        console.error('[NEO4J] Failed to initialize driver:', error);
-        driver = null;
+        console.error('Failed to create Neo4j driver:', error);
         throw error;
     }
-}
+};
 
 /**
  * Validate Neo4j connection
+ * @returns {Promise<boolean>} True if the connection is valid
  */
-export async function validateConnection() {
+export const validateConnection = async () => {
     if (!driver) {
-        throw new Error('Neo4j driver not initialized');
+        throw new Error('Driver not initialized');
     }
 
+    const session = driver.session();
     try {
-        const serverInfo = await driver.verifyConnectivity();
-        console.log('[NEO4J] Connection verified:', serverInfo);
+        await session.run('RETURN 1');
         return true;
-    } catch (error) {
-        console.error('[NEO4J] Connection verification failed:', error);
-        throw error;
+    } finally {
+        await session.close();
     }
-}
+};
 
 /**
  * Get Neo4j connection health status
+ * @returns {Promise<object>} The health status of the Neo4j connection
  */
-export async function healthCheck() {
-    if (!driver) {
-        return { status: 'error', message: 'Driver not initialized' };
-    }
-
+export const healthCheck = async () => {
     try {
-        await driver.verifyConnectivity();
-        return { status: 'healthy' };
+        const isValid = await validateConnection();
+        return {
+            status: isValid ? 'healthy' : 'unhealthy',
+            timestamp: new Date().toISOString(),
+            details: {
+                connectionValid: isValid,
+                driverInitialized: !!driver
+            }
+        };
     } catch (error) {
         return {
-            status: 'error',
-            message: error.message,
-            code: error.code
+            status: 'unhealthy',
+            timestamp: new Date().toISOString(),
+            error: error.message,
+            details: {
+                connectionValid: false,
+                driverInitialized: !!driver
+            }
         };
     }
-}
+};
 
 /**
  * Close Neo4j connection
+ * @returns {Promise<void>}
  */
-export async function close() {
+export const close = async () => {
     if (driver) {
         await driver.close();
         driver = null;
-        console.log('[NEO4J] Driver closed');
     }
-}
+};

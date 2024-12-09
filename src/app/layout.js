@@ -12,25 +12,8 @@ export const metadata = {
   description: 'A graph-based image analysis application',
 };
 
-// Mark as async server component
-export default async function RootLayout({ children }) {
+export default function RootLayout({ children }) {
   console.log('RootLayout rendering...');
-
-  // Initialize the application only in development
-  if (process.env.NODE_ENV === 'development') {
-    try {
-      console.log('Calling initialization API...');
-      const response = await fetch('http://localhost:3000/api/init');
-      
-      if (!response.ok) {
-        const error = await response.json();
-        console.error('Initialization failed:', error);
-        // Don't throw, let the app continue loading
-      }
-    } catch (error) {
-      console.error('Failed to call initialization API:', error);
-    }
-  }
 
   return (
     <html lang="en">

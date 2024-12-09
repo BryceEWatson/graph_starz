@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // The App Router is now stable in Next.js 13+ and doesn't need experimental flag
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',

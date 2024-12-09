@@ -142,42 +142,47 @@ function getNeighboringPrefixes(prefix) {
  * @param {Buffer|string} buffer - The buffer or base64 string to upload
  * @param {string} filename - The desired filename in storage
  * @param {string} contentType - The MIME type of the file
- * @returns {Promise<{url: string, isNew: boolean, similarity?: number}>} The public URL and upload status
+ * @returns {Promise<{url: string, publicUrl: string, isNew: boolean, similarity?: number}>} The public URL and upload status
  */
 async function uploadToGCS(buffer, filename, contentType = 'image/webp') {
   // Convert base64 to buffer if needed
   const fileBuffer = typeof buffer === 'string' 
-    ? Buffer.from(buffer, 'base64')
+    ? Buffer.from(buffer.replace(/^data:image\/\w+;base64,/, ''), 'base64')
     : buffer;
 
-  // Calculate perceptual hash of the image
-  const pHash = await calculateImageHash(fileBuffer);
-  
-  // Check if similar image exists
-  const existingUrl = await findSimilarImage(pHash, filename);
-  if (existingUrl) {
-    return { url: existingUrl, isNew: false };
-  }
+  try {
+    // Calculate perceptual hash of the image
+    const pHash = await calculateImageHash(fileBuffer);
+    
+    // Check if similar image exists
+    const existingUrl = await findSimilarImage(pHash, filename);
+    if (existingUrl) {
+      return { url: existingUrl, publicUrl: existingUrl, isNew: false };
+    }
 
-  // Create a reference to the new file
-  const file = bucket.file(filename);
+    // Create a reference to the new file
+    const file = bucket.file(filename);
 
-  // Upload the file
-  await file.save(fileBuffer, {
-    contentType,
-    metadata: {
-      cacheControl: 'public, max-age=31536000', // Cache for 1 year
+    // Upload the file
+    await file.save(fileBuffer, {
+      contentType,
       metadata: {
-        pHash // Store perceptual hash in metadata
-      }
-    },
-  });
+        cacheControl: 'public, max-age=31536000', // Cache for 1 year
+        metadata: {
+          pHash // Store perceptual hash in metadata
+        }
+      },
+    });
 
-  // Generate Firebase Storage public URL
-  const encodedFilePath = encodeURIComponent(filename);
-  const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedFilePath}?alt=media`;
-  
-  return { url, isNew: true };
+    // Generate Firebase Storage public URL
+    const encodedFilePath = encodeURIComponent(filename);
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedFilePath}?alt=media`;
+    const publicUrl = url; // For backwards compatibility
+    
+    return { url, publicUrl, isNew: true };
+  } catch (error) {
+    throw new Error(`Failed to upload to GCS: ${error.message}`);
+  }
 }
 
 /**

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "clean:dev": "rimraf .next && next dev",
-    "clean:dev:debug": "cross-env DEBUG=app:init* rimraf .next && cross-env DEBUG=app:init* next dev",
+    "clean:dev:debug": "cross-env DEBUG=app:* rimraf .next && cross-env DEBUG=app:* next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
