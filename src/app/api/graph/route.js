@@ -3,11 +3,18 @@ import { initialize, getDriver } from '../../../lib/neo4j/api-client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/options';
 import debug from 'debug';
+import { rateLimit } from '../../../lib/rate-limit';
 
 const log = debug('graph:api');
 
 // Force dynamic route to prevent caching
 export const dynamic = 'force-dynamic';
+
+// Configure rate limiting
+const limiter = rateLimit({
+    interval: 60 * 1000, // 1 minute
+    uniqueTokenPerInterval: 500 // Max 500 users per interval
+});
 
 // Helper function to convert Neo4j integers to JavaScript numbers
 function convertNeo4jIntegers(obj) {
@@ -24,6 +31,16 @@ function convertNeo4jIntegers(obj) {
 
 export async function GET() {
     try {
+        // Apply rate limiting
+        try {
+            await limiter.check(10); // 10 requests per minute
+        } catch {
+            return NextResponse.json(
+                { error: 'Too many requests. Please try again later.' },
+                { status: 429 }
+            );
+        }
+
         // Check authentication
         const authSession = await getServerSession(authOptions);
         if (!authSession?.user?.email) {

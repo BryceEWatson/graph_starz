@@ -1,0 +1,27 @@
+/* Selection states for nodes */
+.graph-node.selected circle {
+    stroke: #3b82f6;
+    stroke-width: 2px;
+    r: 7;  /* Slightly larger when selected */
+}
+
+.graph-node.connected circle {
+    stroke: #93c5fd;
+    stroke-width: 1px;
+}
+
+/* Selection states for links */
+.graph-link.highlighted {
+    stroke: #93c5fd;
+    stroke-width: 3;
+    stroke-opacity: 0.8;
+}
+
+/* Unrelated elements fade back */
+.graph-node:not(.selected):not(.connected) circle {
+    opacity: 0.5;
+}
+
+.graph-link:not(.highlighted) {
+    opacity: 0.3;
+}

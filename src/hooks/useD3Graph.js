@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { setupGraph } from '../lib/d3/setupGraph';
 import { setupInteractions } from '../lib/d3/interactions';
-import { applyStyles } from '../lib/d3/styles';
 import { useTheme } from '../components/ThemeProvider';
 
 export function useD3Graph(data) {
@@ -16,8 +15,8 @@ export function useD3Graph(data) {
 
         let mounted = true;
         const svg = svgRef.current;
-        const width = svg.clientWidth;
-        const height = svg.clientHeight;
+        const width = svg.clientWidth || 800;
+        const height = svg.clientHeight || 600;
 
         // Clear any existing content
         d3.select(svg).selectAll("*").remove();
@@ -27,11 +26,20 @@ export function useD3Graph(data) {
             .attr('width', width)
             .attr('height', height);
 
-        // Set up the simulation and create graph elements
-        const { simulation, nodes, links } = setupGraph(svgElement, data, width, height);
+        // Set up zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 2])  // Allow zooming from half to 2x
+            .on('zoom', (event) => {
+                container.attr('transform', event.transform);
+            });
 
-        // Apply visual styles and effects
-        applyStyles(svgElement, nodes, links, theme);
+        svgElement.call(zoom);
+
+        // Create container for zooming
+        const container = svgElement.append('g');
+
+        // Set up the simulation and create graph elements with theme
+        const { simulation, nodes, links } = setupGraph(container, data, width, height, theme);
 
         // Set up interactions (drag, hover, etc.)
         setupInteractions(nodes, links);
@@ -54,9 +62,6 @@ export function useD3Graph(data) {
         return () => {
             mounted = false;
             simulation.stop();
-            if (svg) {
-                d3.select(svg).selectAll("*").remove();
-            }
         };
     }, [data, theme]);
 

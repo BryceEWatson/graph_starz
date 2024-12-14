@@ -1,14 +1,17 @@
-export function applyStyles(svgElement, nodes, links, theme) {
-    const isDark = theme === 'dark' || 
-        (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+import './selection/styles.css';
 
-    // Colors based on theme
-    const colors = {
-        user: isDark ? '#60a5fa' : '#4299e1',      // Brighter blue in dark mode
-        image: isDark ? '#4ade80' : '#48bb78',      // Brighter green in dark mode
-        color: isDark ? '#fb923c' : '#ed8936',      // Brighter orange in dark mode
-        object: isDark ? '#a78bfa' : '#9061f9',     // Brighter purple in dark mode
-        default: isDark ? '#9ca3af' : '#a0aec0'     // Slightly brighter gray in dark mode
+export function applyStyles(svgElement, nodes, links, theme) {
+    // Apply theme-based styles
+    const colors = theme === 'dark' ? {
+        nodeFill: '#4b5563',
+        nodeStroke: '#1f2937',
+        linkStroke: '#6b7280',
+        textFill: '#d1d5db'
+    } : {
+        nodeFill: '#4b5563',
+        nodeStroke: '#1f2937',
+        linkStroke: '#6b7280',
+        textFill: '#4b5563'
     };
 
     // Add drop shadow filter
@@ -34,51 +37,31 @@ export function applyStyles(svgElement, nodes, links, theme) {
     feMerge.append('feMergeNode')
         .attr('in', 'SourceGraphic');
 
-    // Add circles for nodes with improved styling
-    nodes.append('circle')
-        .attr('r', d => {
-            switch (d.type) {
-                case 'user': return 8;
-                case 'image': return 10;
-                case 'color': return 6;
-                case 'object': return 6;
-                default: return 7;
+    // Return style configurations to be applied in setupGraph
+    return {
+        node: {
+            circle: {
+                fill: colors.nodeFill,
+                stroke: colors.nodeStroke,
+                strokeWidth: 2,
+                filter: 'url(#drop-shadow)'
+            },
+            text: {
+                fill: colors.textFill,
+                dx: d => d.type === 'image' ? 20 : 15,
+                dy: '.35em',
+                stroke: 'none',
+                fontSize: '12px',
+                fontWeight: '500',
+                textShadow: theme === 'dark' ? 
+                    '0px 1px 3px rgba(0,0,0,0.4)' : 
+                    '1px 1px 2px rgba(0,0,0,0.2)'
             }
-        })
-        .attr('fill', d => {
-            switch (d.type) {
-                case 'user': return colors.user;
-                case 'image': return colors.image;
-                case 'color': return colors.color;
-                case 'object': return colors.object;
-                default: return colors.default;
-            }
-        })
-        .attr('stroke', isDark ? '#374151' : '#fff')  // Darker stroke in dark mode
-        .attr('stroke-width', 2)
-        .style('filter', 'url(#drop-shadow)');
-
-    // Add text labels with improved visibility
-    nodes.append("text")
-        .attr("dx", d => d.type === 'image' ? 20 : 15)
-        .attr("dy", ".35em")
-        .attr("fill", isDark ? '#e2e8f0' : '#2d3748')  // Theme-aware text color
-        .attr("stroke", "none")
-        .attr("font-size", "12px")
-        .attr("font-weight", "500")
-        .style("text-shadow", isDark ? "0px 1px 3px rgba(0,0,0,0.4)" : "1px 1px 2px rgba(0,0,0,0.2)")
-        .text(d => {
-            switch (d.type) {
-                case 'user':
-                    return d.name || d.email || 'User';
-                case 'image':
-                    return d.name || d.properties?.title || 'Untitled Image';
-                case 'color':
-                    return `Color: ${d.name || d.properties?.name}`;
-                case 'object':
-                    return `Object: ${d.name || d.properties?.name}`;
-                default:
-                    return d.name || d.type || 'Node';
-            }
-        });
+        },
+        link: {
+            stroke: colors.linkStroke,
+            strokeWidth: 2,
+            strokeOpacity: 0.6
+        }
+    };
 }

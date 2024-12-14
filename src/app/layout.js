@@ -19,8 +19,10 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={inter.className}>
         <Providers>
-          <Navbar />
-          <main className="container mx-auto px-4 py-8">
+          <div className="fixed top-0 left-0 right-0 z-50">
+            <Navbar />
+          </div>
+          <main className="h-screen">
             {children}
           </main>
         </Providers>
