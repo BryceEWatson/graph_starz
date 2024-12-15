@@ -45,7 +45,7 @@ src/lib/d3/
 
 ## Implementation Phases
 
-### Phase 1: Core Visualization (Week 1-2) [COMPLETED]
+### Phase 1: Core Visualization [COMPLETED]
 - [x] Set up basic D3 integration with React
 - [x] Implement core force simulation with adaptive parameters
 - [x] Create basic node and edge rendering
@@ -53,45 +53,58 @@ src/lib/d3/
 - [x] Establish basic user interactions
 - [x] Implement performance metrics collection
 
-### Phase 2: Selection System (Week 2-3) [IN PROGRESS]
+### Phase 2: Selection System [PARTIALLY COMPLETED]
 - [x] Initial D3 mock implementation for testing
 - [x] Fix D3 mock selection chain and data binding
 - [x] Implement proper type preservation in selection chain
-- [ ] Complete selection management system
-  - Simple selection API (select, deselect, toggle)
-  - Clear visual feedback
-  - Multi-select support (shift+click)
-  - Connected node highlighting
-- [ ] Add viewport controls
-  - Pan and zoom
-  - Fit to view
-  - Reset view
-- [ ] Basic spatial organization
-  - Keep related nodes grouped
-  - Prevent node overlap
-  - Maintain readable labels
+- [x] Basic viewport controls
+  - [x] Pan and zoom implementation
+  - [x] Basic zoom constraints (0.1x to 4x)
+  - [ ] Fit to view implementation
+  - [ ] Reset view functionality
+- [ ] Spatial organization
+  - [ ] Type-based Force Organization [HIGH PRIORITY]
+    - [ ] Implement type-specific force parameters
+    - [ ] Configure type-specific repulsion forces
+    - [ ] Configure distance-based node relationships
+  - [ ] Dynamic Force Adjustment
+    - [ ] Scale forces based on graph density
+    - [ ] Adjust link strengths for node types
+    - [ ] Fine-tune collision detection
+  - [ ] Force Simulation Parameters
+    - [ ] Optimize alpha decay for stable layout
+    - [ ] Configure velocity decay for smooth movement
+    - [ ] Set appropriate force strengths
+  - [ ] Keep related nodes nearby without clustering
+  - [ ] Prevent node overlap
+  - [ ] Maintain readable labels
 
-### Phase 3: Enhanced Node Visualization (Week 4) [IN PROGRESS]
-- [ ] Image Node Enhancements [CRITICAL]
-  - [ ] Fix NaN errors in image width and x attributes
-  - [ ] Implement proper dimension calculations
-  - [ ] Add aspect ratio preservation logic
-  - [ ] Create image loading states and fallbacks
-  - [ ] Optimize image loading for performance
+### Phase 3: Visual Enhancement [HIGH PRIORITY]
+- [ ] Declutter Visualization [CRITICAL]
+  - [ ] Implement Dynamic Node Sizing
+    - Scale node size based on viewport zoom level
+    - Reduce size of less relevant nodes
+    - Maintain minimum readable size
+  - [ ] Smart Node Clustering
+    - Group closely related nodes
+    - Collapse dense areas when zoomed out
+    - Expand clusters on hover/zoom
+  - [ ] Visual Hierarchy Improvements
+    - Emphasize important nodes through size
+    - Use opacity for relevance indication
+    - Fade out distant/unrelated nodes more
 
-- [ ] User Node Enhancements
-  - [ ] Add circular avatar support
-  - [ ] Implement profile image loading
-  - [ ] Create placeholder for missing avatars
-  - [ ] Add hover effects for user nodes
+- [ ] Label Management System [HIGH PRIORITY]
+  - [ ] Implement Selective Label Display
+    - Show labels only for focused/important nodes
+    - Hide labels in dense areas
+    - Add hover-triggered label reveal
+  - [ ] Smart Label Positioning
+    - Place labels to avoid overlaps
+    - Adjust position based on available space
+    - Consider node connections in placement
 
-- [ ] Label Management System
-  - [ ] Implement default hidden state
-  - [ ] Add hover-based label reveal
-  - [ ] Create connected node label system
-  - [ ] Add smooth transitions for labels
-
-### Phase 4: Label Management and Visual Enhancement (Week 5-6) [IN PROGRESS]
+### Phase 4: Label Management and Visual Enhancement [IN PROGRESS]
 - [ ] Implement Label Management System
   - [ ] Quadtree-based collision detection
   - [ ] Smart label placement algorithms
@@ -107,7 +120,7 @@ src/lib/d3/
   - [ ] Overlap detection and resolution
   - [ ] Optimal label positioning
 
-### Phase 5: Performance Optimization (Week 7)
+### Phase 5: Performance Optimization [IN PROGRESS]
 - [ ] Image Loading Optimization
   - [ ] Implement progressive image loading
   - [ ] Add image caching system
@@ -120,7 +133,7 @@ src/lib/d3/
   - [ ] Optimize label rendering and transitions
   - [ ] Add frame rate monitoring and adaptation
 
-### Phase 6: User Experience Polish (Week 8)
+### Phase 6: User Experience Polish [IN PROGRESS]
 - [ ] Smooth transitions
   - Selection state changes
   - Viewport movements
@@ -197,53 +210,39 @@ class LabelManager {
 - Collision resolver
 - Label pool for reuse
 
-## Testing Strategy
+## Testing Strategy [UPDATED]
+Focus on high-value test cases that validate core functionality:
 
-### Current Testing Status
-- [x] Basic D3 mock implementation completed
-- [x] Initial test suite for graph setup
-- [x] Mock selection chain improvements completed:
-  - Type preservation through selection chain
-  - Parent-child relationships
-  - Data binding simulation
-  - Method chaining behavior
-- [x] Theme-based styling tests implemented
-- [ ] Manual testing needed for recent changes
-- [ ] Integration tests needed for:
-  - Selection behavior
-  - Viewport controls
-  - Image node rendering and sizing
+1. **Node State Tests**
+   - Verify correct state transitions (normal → highlighted → faded)
+   - Test node scaling and opacity changes
+   - Validate connected node highlighting
 
-### Unit Tests
-```javascript
-// Graph Setup Tests [COMPLETED]
-test('setupGraph initializes with correct data', () => {
-  const graph = setupGraph(container, mockGraphData, width, height);
-  expect(container.append).toHaveBeenCalledWith('defs');
-  expect(nodesGroup.selectAll).toHaveBeenCalledWith('g');
-  expect(nodeElements.data).toHaveBeenCalledWith(mockGraphData.nodes);
-});
+2. **Layout Tests**
+   - Ensure nodes don't overlap at different zoom levels
+   - Verify cluster formation and expansion
+   - Test viewport bounds handling
 
-// Theme-based Styling Tests [COMPLETED]
-test('applies correct styling based on theme', () => {
-  setupGraph(container, mockGraphData, width, height, 'dark');
-  expect(nodeCircles.attr).toHaveBeenCalledWith('fill', expect.any(Function));
-  expect(nodeCircles.style).toHaveBeenCalledWith('filter', 'url(#drop-shadow)');
-});
+3. **Performance Tests**
+   - Measure render time for large graphs
+   - Track frame rate during interactions
+   - Monitor memory usage patterns
 
-// Performance Monitor Tests [COMPLETED]
-test('performance monitor warns at critical thresholds', () => {
-  const monitor = new PerformanceMonitor();
-  monitor.checkNodeCount(450);
-  expect(monitor.warnings).toContain('Node count approaching critical threshold');
-});
-```
+4. **Integration Tests**
+   - Test data flow from backend to visualization
+   - Verify correct handling of updates
+   - Validate interaction with selection system
 
-### Visual Regression Tests [PENDING]
-- Verify selection states are visually distinct
-- Check transition animations are smooth
-- Ensure text remains readable at all zoom levels
-- Validate image node sizing and aspect ratio
+Skip testing for:
+- Exact pixel positions (fragile, low value)
+- Detailed animation timing
+- Edge cases in label positioning
+- Accessibility features (postponed)
+
+### Next Immediate Tasks
+1. Implement dynamic node sizing system
+2. Add basic clustering for dense areas
+3. Create selective label display logic
 
 ## Success Metrics
 - [x] Performance monitoring in place with defined thresholds

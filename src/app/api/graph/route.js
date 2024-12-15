@@ -141,10 +141,10 @@ export async function GET() {
                                 name: node.name,
                                 // Add layout hints
                                 size: CASE 
-                                    WHEN node:User THEN 40  // Larger user nodes
-                                    WHEN node:Image THEN 35  // Medium image nodes
-                                    WHEN node:Attribute THEN 25 // Smaller attribute nodes
-                                    ELSE 30
+                                    WHEN node:User THEN 80  // Larger user nodes
+                                    WHEN node:Image THEN 150  // Medium image nodes
+                                    WHEN node:Attribute THEN 50 // Smaller attribute nodes
+                                    ELSE 60
                                 END,
                                 // Color coding by node type
                                 color: CASE

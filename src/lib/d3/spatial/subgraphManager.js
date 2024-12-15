@@ -21,8 +21,15 @@ export class SubgraphManager {
         });
         
         graphData.links.forEach(link => {
-            adjacencyList.get(link.source.id).push(link.target.id);
-            adjacencyList.get(link.target.id).push(link.source.id);
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            
+            if (adjacencyList.has(sourceId)) {
+                adjacencyList.get(sourceId).push(targetId);
+            }
+            if (adjacencyList.has(targetId)) {
+                adjacencyList.get(targetId).push(sourceId);
+            }
         });
 
         // DFS function to explore a component

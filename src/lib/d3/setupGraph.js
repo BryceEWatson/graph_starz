@@ -1,21 +1,14 @@
 import * as d3 from 'd3';
-import { PerformanceMonitor } from './metrics/performanceMonitor';
-import { SelectionManager } from './selection/selectionManager';
-import { setupHoverInteractions } from './interactions/hover';
-import { QuadTree, QuadTreeNode } from './spatial/quadtree';
-import { GridSystem } from './spatial/gridSystem';
-import { SubgraphManager } from './spatial/subgraphManager';
-import './selection/styles.css';
 
 export function setupGraph(svgElement, data, width, height, theme) {
     // Initialize performance monitor only in development
     const monitor = process.env.NODE_ENV === 'development' 
-        ? new PerformanceMonitor()
+        ? null
         : null;
     
     if (monitor) {
-        monitor.startFrameMonitoring();
-        monitor.updateNodeCount(data.nodes.length);
+        // monitor.startFrameMonitoring();
+        // monitor.updateNodeCount(data.nodes.length);
     }
 
     // Get theme colors
@@ -69,178 +62,43 @@ export function setupGraph(svgElement, data, width, height, theme) {
       attribute: 30  // 30px diameter for attributes
     };
 
-    // Initialize spatial systems
-    const quadtree = new QuadTree(width, height);
-    const gridSystem = new GridSystem(width, height, 100); // 100px grid cells
-    const subgraphManager = new SubgraphManager();
-
-    // Set up the force simulation with improved layout
-    const simulation = d3.forceSimulation(data.nodes)
-        .force('link', d3.forceLink(data.links)
-            .id(d => d.id)
-            .distance(d => {
-                // More natural spacing
-                if (d.source.type === 'image' || d.target.type === 'image') {
-                    return 180;
-                }
-                if (d.source.type === 'user' || d.target.type === 'user') {
-                    return 120;
-                }
-                return 80;
-            }))
-        .force('charge', d3.forceManyBody()
-            .strength(d => {
-                // Adjusted repulsion forces
-                switch (d.type) {
-                    case 'image':
-                        return -300;
-                    case 'user':
-                        return -200;
-                    case 'attribute':
-                        return -50;  // Much weaker repulsion
-                    default:
-                        return -200;
-                }
-            }))
-        .force('collide', d3.forceCollide()
-            .radius(d => {
-                // Adjusted collision radii
-                switch (d.type) {
-                    case 'image':
-                        return 80;
-                    case 'user':
-                        return nodeSizes.user / 2 + 5;
-                    case 'attribute':
-                        return nodeSizes.attribute / 2 + 2;  // Smaller collision area
-                    default:
-                        return 20;
-                }
-            }))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('x', d3.forceX(width / 2).strength(0.02))
-        .force('y', d3.forceY(height / 2).strength(0.02))
-        .on('tick', () => {
-            // Update quadtree
-            quadtree.root = new QuadTreeNode({ x: 0, y: 0, width, height });
-            data.nodes.forEach(node => quadtree.insert(node));
-
-            // Update grid system
-            gridSystem.clear();
-            data.nodes.forEach(node => gridSystem.addNode(node));
-            const adjustedPositions = gridSystem.adjustNodePositions();
-            adjustedPositions.forEach(pos => {
-                const node = data.nodes.find(n => n.id === pos.id);
-                if (node) {
-                    node.x += (pos.x - node.x) * 0.1;
-                    node.y += (pos.y - node.y) * 0.1;
-                }
-            });
-
-            // Update subgraph positions
-            subgraphManager.updateComponentPositions(data);
-
-            // Update visual elements
-            links
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-
-            nodes.attr('transform', d => `translate(${d.x},${d.y})`);
-        });
-
     // Create a container for the graph
     const container = svgElement.append('g');
-
-    // Initialize selection manager with container node
-    const selectionManager = new SelectionManager(container.node());
 
     // Create the links
     const links = container.append('g')
         .selectAll('line')
         .data(data.links)
         .join('line')
-        .attr('class', 'graph-link')
-        .attr('data-source', d => d.source.id)
-        .attr('data-target', d => d.target.id)
         .attr('stroke', colors.linkStroke)
-        .attr('stroke-opacity', d => d.properties?.weight || 0.6)
-        .attr('stroke-width', d => d.properties?.weight ? d.properties.weight * 2 : 2);
+        .attr('stroke-width', 1)
+        .attr('stroke-opacity', 0.6);
 
     // Create the nodes
     const nodes = container.append('g')
         .selectAll('g')
         .data(data.nodes)
         .join('g')
-        .attr('class', 'graph-node')
-        .attr('data-id', d => d.id)
-        .call(d3.drag()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended));
+        .attr('class', 'node');
 
-    // Add labels with meaningful text
-    const labels = nodes.append('text')
-        .attr('class', 'label')
-        .attr('dy', d => d.type === 'image' ? '6em' : '2em')
-        .style('text-anchor', 'middle')
-        .style('font-size', d => {
-            switch (d.type) {
-                case 'image': return '14px';
-                case 'user': return '13px';
-                default: return '11px';  // For all attribute types
-            }
-        })
-        .style('font-weight', d => d.type === 'image' || d.type === 'user' ? '500' : '400')
-        .style('fill', colors.textFill)
-        .style('pointer-events', 'none')
-        .style('opacity', 0)  // Hide all labels by default
-        .text(d => d.properties.name);
+    // Create node circles/images
+    nodes.each(function(d) {
+        const node = d3.select(this);
+        d.element = this;  // Store element reference
 
-    setupHoverInteractions(nodes, links, labels);
-
-    // Add images for image nodes
-    nodes.filter(d => d.type === 'image')
-        .append('image')
-        .attr('xlink:href', d => {
-            // Try each URL property in order of preference
-            const url = d.properties?.fullUrl || d.properties?.previewUrl || d.properties?.thumbnailUrl;
-            if (!url) {
-                console.warn(`Image node ${d.id} missing URL property`);
-                return 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIi8+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiLz48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIi8+PC9zdmc+';
-            }
-            return url;
-        })
-        .attr('width', nodeSizes.image.width)
-        .attr('height', nodeSizes.image.height)
-        .attr('x', -nodeSizes.image.width / 2)
-        .attr('y', -nodeSizes.image.height / 2)
-        .style('filter', 'url(#drop-shadow)');
-
-    // Remove circles from image nodes since we're showing the actual images
-    nodes.filter(d => d.type === 'image')
-        .select('circle')
-        .remove();
-
-    // Node styling with proper colors
-    nodes.filter(d => d.type !== 'image')
-        .append('circle')
-        .attr('r', d => {
-            switch (d.type) {
-                case 'user': return nodeSizes.user / 2;
-                case 'attribute': 
-                case 'color':
-                case 'style':
-                case 'mood':
-                case 'technique':
-                case 'object':
-                case 'composition':
-                    return nodeSizes.attribute / 2;
-                default: return 15;
-            }
-        })
-        .attr('fill', d => {
-            // Use the color mapping from the API
+        if (d.type === 'image') {
+            // For image nodes
+            const imageUrl = d.properties?.fullUrl || d.properties?.previewUrl || d.properties?.thumbnailUrl;
+            node.append('image')
+                .attr('xlink:href', imageUrl || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIi8+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiLz48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIi8+PC9zdmc+')
+                .attr('width', d.properties?.size || 150)
+                .attr('height', d.properties?.size || 150)
+                .attr('x', d => -(d.properties?.size || 150) / 2)
+                .attr('y', d => -(d.properties?.size || 150) / 2)
+                .style('filter', 'url(#drop-shadow)');
+        } else {
+            // For other nodes (user, attribute)
+            const size = nodeSizes[d.type] || nodeSizes.attribute;
             const typeColors = {
                 user: '#4A90E2',      // Blue for users
                 image: '#50C878',     // Green for images
@@ -251,11 +109,57 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 mood: '#FFD700',      // Gold for moods
                 composition: '#FF7F50' // Coral for composition
             };
-            return typeColors[d.type] || colors.defaultNode;
-        })
-        .attr('stroke', colors.nodeBorder)
-        .attr('stroke-width', 2)
-        .style('filter', 'url(#drop-shadow)');
+            
+            node.append('circle')
+                .attr('r', size / 2)
+                .attr('fill', typeColors[d.type] || colors.defaultNode)
+                .attr('stroke', colors.nodeBorder)
+                .attr('stroke-width', 2)
+                .style('filter', 'url(#drop-shadow)');
+        }
+
+        // Add labels
+        node.append('text')
+            .text(d.properties?.name || d.name || '')
+            .attr('dy', d.type === 'image' ? '4em' : '-1.5em')
+            .attr('text-anchor', 'middle')
+            .attr('fill', colors.textFill)
+            .style('font-size', d.type === 'image' ? '14px' : '12px')
+            .style('font-weight', '500')
+            .style('opacity', 0)  // Initially hidden
+            .style('pointer-events', 'none')
+            .style('paint-order', 'stroke')
+            .style('stroke', '#000')
+            .style('stroke-width', '0.5px');
+    });
+
+    // Initialize force simulation
+    const simulation = d3.forceSimulation(data.nodes)
+        .force('link', d3.forceLink(data.links)
+            .id(d => d.id)
+            .distance(100)
+            .strength(0.1))
+        .force('charge', d3.forceManyBody()
+            .strength(-300)
+            .distanceMax(500)
+            .distanceMin(50))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide()
+            .radius(50)
+            .strength(0.7)
+            .iterations(2));
+
+    // Update function for force simulation
+    simulation.on('tick', () => {
+        // Update visual elements
+        links
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+
+        nodes.attr('transform', d => `translate(${d.x},${d.y}) scale(1)`);
+    });
 
     // Unified hover effects
     nodes.on('mouseover', function(event, d) {
@@ -268,7 +172,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
             .attr('stroke-width', 3);
         
         // Show label for hovered node
-        hoveredNode.select('.label')
+        hoveredNode.select('text')
             .transition()
             .duration(150)
             .style('opacity', 1);
@@ -287,7 +191,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 
                 // Show connected node's label
                 nodes.filter(n => n.id === connectedNode.id)
-                    .select('.label')
+                    .select('text')
                     .transition()
                     .duration(150)
                     .style('opacity', 0.8);
@@ -313,7 +217,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 .attr('stroke-width', 2);
             
             // Hide label
-            hoveredNode.select('.label')
+            hoveredNode.select('text')
                 .transition()
                 .duration(150)
                 .style('opacity', 0);
@@ -332,7 +236,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
                     
                     // Hide connected node's label
                     nodes.filter(n => !n.selected && n.id === connectedNode.id)
-                        .select('.label')
+                        .select('text')
                         .transition()
                         .duration(150)
                         .style('opacity', 0);
@@ -356,7 +260,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
         if (!event.shiftKey) {
             // Clear other selections
             nodes.classed('selected', false)
-                .select('.label')
+                .select('text')
                 .style('opacity', 0);
         }
         
@@ -365,7 +269,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
         
         if (!wasSelected) {
             // Show label for newly selected node
-            node.select('.label')
+            node.select('text')
                 .style('opacity', 1);
             
             // Show labels for connected nodes
@@ -373,7 +277,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 if (linkData.source.id === d.id || linkData.target.id === d.id) {
                     const connectedNode = linkData.source.id === d.id ? linkData.target : linkData.source;
                     nodes.filter(n => n.id === connectedNode.id)
-                        .select('.label')
+                        .select('text')
                         .style('opacity', 0.8);
                 }
             });
@@ -383,43 +287,9 @@ export function setupGraph(svgElement, data, width, height, theme) {
     // Click on background to clear selection
     svgElement.on('click', (event) => {
         if (event.target === svgElement.node()) {
-            selectionManager.clearSelection();
+            // No selection manager
         }
     });
 
-    // Set up drag behavior
-    function dragstarted(event) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        event.subject.fx = event.subject.x;
-        event.subject.fy = event.subject.y;
-    }
-
-    function dragged(event) {
-        event.subject.fx = event.x;
-        event.subject.fy = event.y;
-    }
-
-    function dragended(event) {
-        if (!event.active) simulation.alphaTarget(0);
-        event.subject.fx = null;
-        event.subject.fy = null;
-    }
-
-    // Performance monitoring
-    if (monitor) {
-        simulation.on('tick', () => {
-            const status = monitor.checkPerformance();
-            if (status.status !== 'normal') {
-                console.warn('Performance issues detected:', status);
-                
-                // Implement adaptive measures based on performance
-                if (status.status === 'critical') {
-                    simulation.alphaDecay(0.05); // Faster cooling
-                    simulation.velocityDecay(0.4); // More damping
-                }
-            }
-        });
-    }
-
-    return { simulation, nodes, links, selectionManager };
+    return { simulation, nodes, links };
 }

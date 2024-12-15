@@ -11,11 +11,11 @@ jest.mock('../selection/selectionManager', () => ({
 }));
 
 // Mock D3 implementation using module factory pattern
-jest.mock('d3', () => require('../__mocks__/d3Mock'));
+jest.mock('d3', () => require('../__mocks__/d3'));
 
 import * as d3 from 'd3';
 import { setupGraph } from '../setupGraph';
-import { createMockSelection } from '../__mocks__/d3Mock';
+import { createMockSelection } from '../__mocks__/modules/selectionMock';
 
 describe('Node Rendering', () => {
     let container;

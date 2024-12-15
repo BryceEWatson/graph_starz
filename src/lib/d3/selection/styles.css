@@ -2,7 +2,8 @@
 .graph-node.selected circle {
     stroke: #3b82f6;
     stroke-width: 2px;
-    r: 7;  /* Slightly larger when selected */
+    width: 14px;  /* Slightly larger when selected */
+    height: 14px;
 }
 
 .graph-node.connected circle {
@@ -24,4 +25,90 @@
 
 .graph-link:not(.highlighted) {
     opacity: 0.3;
+}
+
+/* Tooltip styles */
+.tooltip {
+    position: absolute;
+    visibility: hidden;
+    opacity: 0;
+    background: rgba(0, 0, 0, 0.9);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 1000;
+    max-width: 300px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+}
+
+.tooltip-header {
+    margin-bottom: 8px;
+}
+
+.tooltip-header .title {
+    font-weight: bold;
+    color: #4A90E2;
+}
+
+.tooltip-header .type {
+    color: #8899aa;
+    font-size: 11px;
+}
+
+.tooltip-row {
+    margin: 4px 0;
+}
+
+.tooltip-row .label {
+    color: #8899aa;
+    margin-right: 8px;
+}
+
+/* Node hover states */
+.graph-node:hover circle {
+    filter: brightness(1.2);
+    cursor: pointer;
+}
+
+.graph-node image {
+    transition: transform 0.2s ease-in-out;
+}
+
+.graph-node:hover image {
+    transform: scale(1.1);
+}
+
+/* Link hover states */
+.graph-link:hover {
+    stroke-opacity: 0.8;
+    cursor: pointer;
+}
+
+/* Dragging state */
+.graph-node.dragging circle {
+    stroke: #3b82f6;
+    stroke-width: 3px;
+    cursor: grabbing;
+}
+
+.graph-node.dragging image {
+    transform: scale(1.1);
+}
+
+/* Node base styles */
+.graph-node circle {
+    cursor: grab;
+}
+
+.graph-node text {
+    font-size: 12px;
+    pointer-events: none;
+    fill: #d1d5db;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    transform: translateY(5px); /* Additional offset for text */
+    z-index: 2;
 }

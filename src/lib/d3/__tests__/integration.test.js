@@ -7,6 +7,13 @@ jest.mock('../selection/selectionManager', () => ({
     }))
 }));
 
+// Mock D3 implementation using module factory pattern
+jest.mock('d3', () => require('../__mocks__/d3'));
+
+import * as d3 from 'd3';
+import { createMockSelection } from '../__mocks__/modules/selectionMock';
+import { MockZoomTransform } from '../__mocks__/modules/zoomMock';
+
 // Create a function that returns a new mock selection to avoid shared state
 const createMockSelection = () => {
     const selection = {
@@ -69,71 +76,6 @@ const createMockSelection = () => {
     return selection;
 };
 
-// Mock D3 implementation using module factory pattern
-jest.mock('d3', () => {
-    const createMockSimulation = (nodes) => {
-        const simulation = {
-            _nodes: nodes?.map(n => ({ ...n, x: 0, y: 0, vx: 0, vy: 0 })) || [],
-            _forces: new Map(),
-            nodes: jest.fn().mockImplementation(n => {
-                if (n) simulation._nodes = n.map(node => ({ ...node, x: 0, y: 0, vx: 0, vy: 0 }));
-                return simulation;
-            }),
-            force: jest.fn().mockImplementation((name, force) => {
-                simulation._forces.set(name, force);
-                return simulation;
-            }),
-            alpha: jest.fn().mockReturnThis(),
-            alphaTarget: jest.fn().mockReturnThis(),
-            alphaDecay: jest.fn().mockReturnThis(),
-            velocityDecay: jest.fn().mockReturnThis(),
-            restart: jest.fn().mockReturnThis(),
-            tick: jest.fn().mockReturnThis(),
-            on: jest.fn().mockImplementation((event, callback) => {
-                if (event === 'tick') callback();
-                return simulation;
-            })
-        };
-        if (nodes) simulation.nodes(nodes);
-        return simulation;
-    };
-
-    const d3Mock = {
-        select: jest.fn().mockImplementation(() => createMockSelection()),
-        zoom: jest.fn().mockReturnValue({
-            scaleExtent: jest.fn().mockReturnThis(),
-            on: jest.fn().mockReturnThis()
-        }),
-        drag: jest.fn().mockReturnValue({
-            on: jest.fn().mockReturnThis()
-        }),
-        forceSimulation: jest.fn().mockImplementation(nodes => createMockSimulation(nodes)),
-        forceManyBody: jest.fn().mockReturnValue({
-            strength: jest.fn().mockReturnThis()
-        }),
-        forceCenter: jest.fn().mockReturnValue({
-            x: jest.fn().mockReturnThis(),
-            y: jest.fn().mockReturnThis()
-        }),
-        forceLink: jest.fn().mockImplementation(links => ({
-            id: jest.fn().mockReturnThis(),
-            distance: jest.fn().mockReturnThis(),
-            strength: jest.fn().mockReturnThis(),
-            _links: links
-        })),
-        forceCollide: jest.fn().mockReturnValue({
-            radius: jest.fn().mockReturnThis()
-        }),
-        forceX: jest.fn().mockReturnValue({
-            strength: jest.fn().mockReturnThis()
-        }),
-        forceY: jest.fn().mockReturnValue({
-            strength: jest.fn().mockReturnThis()
-        })
-    };
-    return d3Mock;
-});
-
 // Mock Neo4j client
 jest.mock('../../neo4j/api-client', () => ({
     initialize: jest.fn(),
@@ -145,7 +87,6 @@ jest.mock('next-auth', () => ({
     getServerSession: jest.fn()
 }));
 
-import * as d3 from 'd3';
 import { setupGraph } from '../setupGraph';
 import { mockGraphData } from './mockData';
 import { getGraphData } from '../../neo4j/queries';
@@ -232,5 +173,175 @@ describe('Neo4j to D3 Integration', () => {
         expect(simulation._forces.has('link')).toBe(true);
         expect(simulation._forces.has('charge')).toBe(true);
         expect(simulation._forces.has('center')).toBe(true);
+    });
+});
+
+describe('D3 Mock Integration', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    describe('Selection and Force Integration', () => {
+        test('selection methods chain with force simulation', () => {
+            const container = createMockSelection();
+            const nodes = [
+                { id: 1, x: 100, y: 100 },
+                { id: 2, x: 200, y: 200 }
+            ];
+            const links = [
+                { source: 1, target: 2 }
+            ];
+
+            // Create force simulation
+            const simulation = d3.forceSimulation(nodes)
+                .force('charge', d3.forceManyBody())
+                .force('link', d3.forceLink(links))
+                .force('center', d3.forceCenter());
+
+            // Create node elements with force simulation
+            const nodeElements = container
+                .append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .join('circle');
+
+            // Verify simulation methods were called
+            expect(d3.forceSimulation).toHaveBeenCalledWith(nodes);
+            expect(d3.forceManyBody).toHaveBeenCalled();
+            expect(d3.forceLink).toHaveBeenCalledWith(links);
+            expect(d3.forceCenter).toHaveBeenCalled();
+
+            // Verify selection chaining
+            expect(container.append).toHaveBeenCalledWith('g');
+            expect(nodeElements.data).toHaveBeenCalledWith(nodes);
+            expect(nodeElements.join).toHaveBeenCalledWith('circle');
+        });
+
+        test('force simulation updates trigger selection updates', () => {
+            const container = createMockSelection();
+            const nodes = [
+                { id: 1, x: 0, y: 0 },
+                { id: 2, x: 0, y: 0 }
+            ];
+
+            // Create force simulation
+            const simulation = d3.forceSimulation(nodes)
+                .force('charge', d3.forceManyBody().strength(-30))
+                .force('center', d3.forceCenter(300, 300))
+                .on('tick', () => {
+                    container.selectAll('circle')
+                        .data(nodes)
+                        .join('circle')
+                        .attr('cx', d => d.x)
+                        .attr('cy', d => d.y);
+                });
+
+            // Verify simulation setup
+            expect(simulation.on).toHaveBeenCalledWith('tick', expect.any(Function));
+            expect(d3.forceManyBody().strength).toHaveBeenCalledWith(-30);
+            expect(d3.forceCenter).toHaveBeenCalledWith(300, 300);
+
+            // Trigger a tick event
+            const tickHandler = simulation.on.mock.calls.find(call => call[0] === 'tick')[1];
+            tickHandler();
+
+            // Verify selection updates
+            expect(container.selectAll).toHaveBeenCalledWith('circle');
+            const circles = container.selectAll('circle');
+            expect(circles.data).toHaveBeenCalledWith(nodes);
+            expect(circles.join).toHaveBeenCalledWith('circle');
+            expect(circles.attr).toHaveBeenCalledWith('cx', expect.any(Function));
+            expect(circles.attr).toHaveBeenCalledWith('cy', expect.any(Function));
+        });
+    });
+
+    describe('Selection and Zoom Integration', () => {
+        test('zoom behavior properly integrates with selections', () => {
+            const container = createMockSelection();
+            const zoomBehavior = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => {
+                    container.select('g')
+                        .attr('transform', event.transform);
+                });
+
+            container.call(zoomBehavior);
+
+            // Verify zoom setup
+            expect(d3.zoom).toHaveBeenCalled();
+            expect(zoomBehavior.scaleExtent).toHaveBeenCalledWith([0.1, 4]);
+            expect(zoomBehavior.on).toHaveBeenCalledWith('zoom', expect.any(Function));
+            expect(container.call).toHaveBeenCalledWith(zoomBehavior);
+
+            // Simulate zoom event
+            const zoomHandler = zoomBehavior.on.mock.calls.find(call => call[0] === 'zoom')[1];
+            const mockEvent = {
+                transform: new MockZoomTransform(2, 100, 100)
+            };
+            zoomHandler(mockEvent);
+
+            // Verify selection updates from zoom
+            expect(container.select).toHaveBeenCalledWith('g');
+            const g = container.select('g');
+            expect(g.attr).toHaveBeenCalledWith('transform', mockEvent.transform);
+        });
+    });
+
+    describe('Force and Drag Integration', () => {
+        test('drag behavior properly integrates with force simulation', () => {
+            const nodes = [
+                { id: 1, x: 100, y: 100 },
+                { id: 2, x: 200, y: 200 }
+            ];
+
+            // Create force simulation
+            const simulation = d3.forceSimulation(nodes);
+
+            // Create drag behavior
+            const dragBehavior = d3.drag()
+                .on('start', () => {
+                    simulation.alphaTarget(0.3).restart();
+                })
+                .on('drag', () => {
+                    const node = nodes[0];
+                    node.x = 150;
+                    node.y = 150;
+                })
+                .on('end', () => {
+                    simulation.alphaTarget(0);
+                });
+
+            // Create container and nodes
+            const container = createMockSelection();
+            const nodeElements = container
+                .append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .join('circle')
+                .call(dragBehavior);
+
+            // Verify drag behavior setup
+            expect(d3.drag).toHaveBeenCalled();
+            expect(dragBehavior.on).toHaveBeenCalledWith('start', expect.any(Function));
+            expect(dragBehavior.on).toHaveBeenCalledWith('drag', expect.any(Function));
+            expect(dragBehavior.on).toHaveBeenCalledWith('end', expect.any(Function));
+
+            // Simulate drag start
+            const dragStartHandler = dragBehavior.on.mock.calls.find(call => call[0] === 'start')[1];
+            dragStartHandler();
+            expect(simulation.alphaTarget).toHaveBeenCalledWith(0.3);
+            expect(simulation.restart).toHaveBeenCalled();
+
+            // Simulate drag
+            const dragHandler = dragBehavior.on.mock.calls.find(call => call[0] === 'drag')[1];
+            dragHandler();
+            expect(nodes[0].x).toBe(150);
+            expect(nodes[0].y).toBe(150);
+
+            // Simulate drag end
+            const dragEndHandler = dragBehavior.on.mock.calls.find(call => call[0] === 'end')[1];
+            dragEndHandler();
+            expect(simulation.alphaTarget).toHaveBeenCalledWith(0);
+        });
     });
 });

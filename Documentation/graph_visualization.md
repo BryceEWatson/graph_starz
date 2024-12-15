@@ -93,6 +93,28 @@
 
 ## Technical Implementation
 
+### Force Simulation Rules
+1. **Type-based Organization**
+   - User nodes: Medium repulsion (-300)
+   - Image nodes: Strong repulsion (-500)
+   - Attribute nodes: Light repulsion (-100)
+   - Type-specific collision radiuses
+   - Related nodes maintain proximity through link forces
+
+2. **Link Distance Rules**
+   - Image-connected: 180px spacing
+   - User-connected: 120px spacing
+   - Attribute-connected: 80px spacing
+   - Stronger links between same types (0.2)
+   - Strong user-image connections (0.3)
+   - Default link strength (0.1)
+
+3. **Movement Parameters**
+   - Alpha decay: 0.02 for stable layout
+   - Alpha target: 0.05 for subtle movement
+   - Velocity decay: 0.3 for smooth transitions
+   - Multiple collision iterations for stability
+
 ### Selection Management
 ```javascript
 // Simple, focused selection API

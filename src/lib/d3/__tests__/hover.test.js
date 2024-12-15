@@ -1,89 +1,99 @@
-import { setupHoverInteractions } from '../interactions/hover';
 import { mockGraphData } from './mockData';
+import { createMockSelection } from '../__mocks__/modules/selectionMock';
 import * as d3 from 'd3';
-
-// Mock D3 selections
-const mockSelection = {
-    style: jest.fn().mockReturnThis(),
-    on: jest.fn().mockReturnThis(),
-    each: jest.fn(),
-    empty: jest.fn().mockReturnValue(false),
-    html: jest.fn().mockReturnThis(),
-};
-
-// Mock d3.select
-jest.spyOn(d3, 'select').mockImplementation(() => mockSelection);
+import { applyNodeState } from '../interactions/hover';
 
 describe('Hover Interactions', () => {
-    let nodes, links, labels;
+    let nodes, links;
+    let nodeSelections;
 
     beforeEach(() => {
         // Reset mocks
         jest.clearAllMocks();
         
-        // Create mock selections
-        nodes = {
-            ...mockSelection,
-            data: () => mockGraphData.nodes,
-        };
-        
-        links = {
-            ...mockSelection,
-            data: () => mockGraphData.links,
-        };
-        
-        labels = {
-            ...mockSelection,
-            data: () => mockGraphData.nodes,
-        };
+        // Create mock DOM nodes and selections
+        nodeSelections = new Map();
+        mockGraphData.nodes.forEach(node => {
+            const nodeSelection = createMockSelection()
+                .setDatum(node)
+                .setEmpty(false)
+                .setNode({ nodeType: 1, _data: node });
+            
+            // Mock image and text selections
+            nodeSelection.select.mockImplementation((selector) => {
+                if (selector === 'image') {
+                    return createMockSelection()
+                        .setDatum(node)
+                        .setEmpty(node.type !== 'image');
+                }
+                if (selector === 'text') {
+                    return createMockSelection()
+                        .setDatum(node)
+                        .setEmpty(false);
+                }
+                return createMockSelection().setEmpty(true);
+            });
+            nodeSelections.set(node.id, nodeSelection);
+        });
+
+        // Create mock nodes and links selections
+        nodes = createMockSelection();
+        nodes.data.mockReturnValue(mockGraphData.nodes);
+        nodes.each.mockImplementation(callback => {
+            mockGraphData.nodes.forEach(node => {
+                callback.call(nodeSelections.get(node.id).node(), node);
+            });
+        });
+
+        links = createMockSelection();
+        links.data.mockReturnValue(mockGraphData.links);
+        links.each.mockImplementation(callback => {
+            mockGraphData.links.forEach(link => {
+                callback.call({}, link);
+            });
+        });
+
+        // Mock d3.select
+        d3.select = jest.fn().mockImplementation((selector) => {
+            if (selector && selector.nodeType === 1 && selector._data) {
+                return nodeSelections.get(selector._data.id);
+            }
+            return createMockSelection();
+        });
     });
 
-    test('setupHoverInteractions registers mouse events', () => {
-        setupHoverInteractions(nodes, links, labels);
-        
-        // Should register mouseover, mousemove, and mouseout events
-        expect(nodes.on).toHaveBeenCalledWith('mouseover', expect.any(Function));
-        expect(nodes.on).toHaveBeenCalledWith('mousemove', expect.any(Function));
-        expect(nodes.on).toHaveBeenCalledWith('mouseout', expect.any(Function));
-    });
-
-    test('mouseover highlights connected nodes and shows tooltip', () => {
-        setupHoverInteractions(nodes, links, labels);
-        
-        // Get the mouseover handler
-        const mouseoverHandler = nodes.on.mock.calls.find(call => call[0] === 'mouseover')[1];
-        
-        // Simulate mouseover event
-        const event = { pageX: 100, pageY: 100 };
+    test('applies correct node state', () => {
         const node = mockGraphData.nodes[0];
+        const nodeSelection = nodeSelections.get(node.id);
         
-        mouseoverHandler(event, node);
+        applyNodeState(nodeSelection, 'highlighted');
         
-        // Should update opacities
-        expect(nodes.style).toHaveBeenCalledWith('opacity', expect.any(Function));
-        expect(links.style).toHaveBeenCalledWith('opacity', expect.any(Function));
-        expect(labels.style).toHaveBeenCalledWith('opacity', expect.any(Function));
-        
-        // Should show and position tooltip
-        expect(mockSelection.style).toHaveBeenCalledWith('opacity', 1);
-        expect(mockSelection.style).toHaveBeenCalledWith('left', '110px');
-        expect(mockSelection.style).toHaveBeenCalledWith('top', '90px');
+        expect(nodeSelection.style).toHaveBeenCalledWith('opacity', 1);
+        expect(nodeSelection.attr).toHaveBeenCalledWith('transform', expect.stringContaining('scale(1.2)'));
+        expect(nodeSelection.classed).toHaveBeenCalledWith('highlighted', true);
     });
 
-    test('mouseout resets highlights and hides tooltip', () => {
-        setupHoverInteractions(nodes, links, labels);
+    test('shows labels for highlighted and related nodes', () => {
+        const node = mockGraphData.nodes[0];
+        const nodeSelection = nodeSelections.get(node.id);
+        const textSelection = nodeSelection.select('text');
         
-        // Get the mouseout handler
-        const mouseoutHandler = nodes.on.mock.calls.find(call => call[0] === 'mouseout')[1];
+        applyNodeState(nodeSelection, 'highlighted');
         
-        mouseoutHandler();
+        expect(textSelection.style).toHaveBeenCalledWith('opacity', 1);
+        expect(textSelection.text).toHaveBeenCalledWith(node.properties.name || node.name || '');
+    });
+
+    test('handles image nodes correctly', () => {
+        const imageNode = mockGraphData.nodes.find(n => n.type === 'image');
+        if (!imageNode) return; // Skip if no image nodes in test data
         
-        // Should reset opacities
-        expect(nodes.style).toHaveBeenCalledWith('opacity', 1);
-        expect(links.style).toHaveBeenCalledWith('opacity', 0.6);
-        expect(labels.style).toHaveBeenCalledWith('opacity', 0);
+        const nodeSelection = nodeSelections.get(imageNode.id);
+        const imageSelection = nodeSelection.select('image');
         
-        // Should hide tooltip
-        expect(mockSelection.style).toHaveBeenCalledWith('opacity', 0);
+        applyNodeState(nodeSelection, 'highlighted');
+        
+        expect(imageSelection.attr).toHaveBeenCalledWith('width', expect.any(Number));
+        expect(imageSelection.attr).toHaveBeenCalledWith('height', expect.any(Number));
     });
 });

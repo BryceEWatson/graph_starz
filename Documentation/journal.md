@@ -1,117 +1,122 @@
-# Development Journal
+## 2024-12-15: Force Simulation Enhancement Planning
 
-## Current Sprint: Label Management and Visual Enhancement (December 13-15, 2024)
+### Original Goal and Plan
+**Goal**: Improve graph node organization while maintaining visibility of all nodes
+- Focus on using D3's force simulation to create a more logical layout
+- Keep all nodes visible (no clustering)
+- Enhance the visual organization through type-specific forces
 
-### Goals
-1. Implement robust label management system
-2. Enhance visual states for better node distinction
-3. Improve label collision avoidance
+### Actions Taken
+1. **Documentation Review and Updates**
+   - Reviewed current force simulation implementation in `setupGraph.js`
+   - Updated `graph_visualization.md` with detailed force simulation rules
+   - Enhanced `graph_visualization_plan.md` with specific implementation tasks
+   - Removed ambiguous "semantic grouping" terminology to prevent confusion
 
-### Progress
+2. **Force Simulation Design**
+   - Defined type-specific repulsion forces:
+     - Image nodes: -500 (strong repulsion)
+     - User nodes: -300 (medium repulsion)
+     - Attribute nodes: -100 (light repulsion)
+   - Established link distance rules:
+     - Image-connected: 180px
+     - User-connected: 120px
+     - Attribute-connected: 80px
+   - Set link strength parameters:
+     - Same type connections: 0.2
+     - User-image connections: 0.3
+     - Default connections: 0.1
 
-#### December 13, 2024 - Label Management System Design
-**Time Spent:** 4 hours
+3. **Movement Parameter Configuration**
+   - Alpha decay: 0.02 (for stable layout)
+   - Alpha target: 0.05 (for subtle movement)
+   - Velocity decay: 0.3 (for smooth transitions)
 
-**Completed:**
-- Analyzed existing label behavior implementation
-- Identified key areas for improvement
-- Mapped out dependencies for label management system
+### Test Results
+- No tests implemented yet
+- Implementation phase to begin after documentation review
 
-**Key Decisions:**
-1. Label Management System:
-   - Will use quadtree for collision detection
-   - Smart label placement with force-directed algorithm
-   - Curved label support for relationships
+### Lessons Learned
+1. **Terminology Precision**
+   - Identified that terms like "semantic grouping" can be misleading
+   - Importance of clear, unambiguous technical documentation
+   - Need to explicitly state when we're avoiding certain approaches (like clustering)
 
-2. Visual States:
-   - Normal: 100% opacity
-   - Related: 70% opacity
-   - Unrelated: 10% opacity
-   - 150ms transition duration
+2. **Force Simulation Understanding**
+   - Better understanding of how different force parameters interact
+   - Importance of balancing repulsion and attraction forces
+   - Need for type-specific parameters to create logical layouts
 
-**Research Findings:**
-1. Label Positioning:
-   - Force-directed placement performs better than fixed offsets
-   - Quadtree reduces collision detection complexity from O(n²) to O(n log n)
-   - GPU acceleration possible for smooth transitions
+### Time Required
+- Documentation review and updates: ~1 hour
+- Force simulation design and parameter planning: ~1 hour
+- Total time: ~2 hours
 
-2. Performance:
-   - Batch updates improve rendering speed
-   - Label pool reuse reduces memory allocation
-   - RequestAnimationFrame provides smoother animations
+### Goal Completion Status
+- Documentation phase completed
+- Implementation phase ready to begin
+- Clear parameters and approach defined
+- No technical debt or ambiguity in documentation
 
-**Next Steps:**
-1. Implement core LabelManager class
-2. Add collision detection system
-3. Create transition manager
-4. Set up label pool
+### Next Steps
+Here's the initial message for the next engineer:
 
-#### December 12, 2024 - D3 Mock Implementation
-**Time Spent:** 6 hours
+# Force Simulation Enhancement Task
 
-**Completed:**
-- Fixed D3 mock implementation issues
-- Improved test stability
-- Enhanced method call tracking
+## Context
+We need to improve the graph node organization in our D3 visualization while ensuring all nodes remain visible. The current implementation in `setupGraph.js` needs enhancement to create more logical node arrangements based on node types and relationships.
 
-**Key Improvements:**
-1. Mock Implementation:
-   ```javascript
-   const createMockSelection = (type, parent) => ({
-       _type: type,
-       _mockCalls: parent ? parent._mockCalls : [],
-       attr: jest.fn().mockImplementation(function(name, value) {
-           this._mockCalls.push({ method: 'attr', args: [name, value] });
-           return this;
-       })
-   });
-   ```
+## Requirements
+1. **Nodes should be organized based on type and relationships**
 
-2. Test Coverage:
-   - Added image node rendering tests
-   - Improved label behavior coverage
-   - Fixed transition timing tests
+## Implementation Details
 
-**Lessons Learned:**
-1. Technical:
-   - Jest mocks need careful setup for chainable APIs
-   - Shared state helps track calls across selection chain
-   - Type preservation crucial for D3 selections
+### Type-Specific Forces
+- **Image Nodes**
+  - Repulsion: -500
+  - Collision radius: 90px
+  - Link distance: 180px when connected
+  
+- **User Nodes**
+  - Repulsion: -300
+  - Collision radius: 40px
+  - Link distance: 120px when connected
+  
+- **Attribute Nodes**
+  - Repulsion: -100
+  - Collision radius: 20px
+  - Link distance: 80px when connected
 
-2. Process:
-   - Test-first approach catches issues early
-   - Small, focused changes improve stability
-   - Regular test runs prevent regression
+### Link Strengths
+- Same type connections: 0.2
+- User-image connections: 0.3
+- Default connections: 0.1
 
-**Applied to Future Work:**
-1. Create reusable test utilities
-2. Focus on behavior over implementation
-3. Maintain comprehensive test coverage
+### Movement Parameters
+- Alpha decay: 0.02
+- Alpha target: 0.05
+- Velocity decay: 0.3
+- Collision iterations: 2
 
-## Resolved Issues
+## Files to Modify
+1. `src/lib/d3/setupGraph.js`
+   - Update force simulation configuration
+   - Implement type-specific parameters
+   - Add collision detection improvements
 
-### 1. D3 Force Link Mock Implementation
-- **Problem:** ReferenceError in mock initialization
-- **Solution:** Used `mockReturnThis()` for chainable methods
-- **Impact:** Stable test suite, improved maintainability
-- **Date:** December 12, 2024
+## Testing
+1. Create test cases in `src/lib/d3/__tests__/setupGraph.test.js`
+2. Test with different node type combinations
+3. Check force parameters are correctly applied
 
-### 2. Selection Method Call Tracking
-- **Problem:** Lost method calls in D3 selection chain
-- **Solution:** Implemented shared call tracking system
-- **Impact:** Accurate testing of D3 operations
-- **Date:** December 13, 2024
+## Success Criteria
+1. Related nodes maintain proximity through link forces
+2. Different node types have appropriate spacing
+3. Movement is smooth and stable
 
-## Active Research Questions
+## Resources
+- Current implementation: `setupGraph.js`
+- Documentation: `graph_visualization.md` and `graph_visualization_plan.md`
+- D3 force simulation docs: https://d3js.org/d3-force
 
-### 1. Label Management
-- **Context:** Dense graph label placement
-- **Approach:** Force-directed algorithm
-- **Status:** Investigating performance trade-offs
-- **Priority:** High
-
-### 2. Performance Optimization
-- **Context:** Large graph rendering
-- **Approach:** Batch updates and caching
-- **Status:** Benchmarking solutions
-- **Priority:** Medium
+Start with the test cases first, following our TDD approach. Let me know if you need any clarification on the requirements or implementation details.
