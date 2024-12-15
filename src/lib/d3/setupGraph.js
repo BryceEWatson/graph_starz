@@ -1,5 +1,41 @@
 import * as d3 from 'd3';
 
+// Configuration for force variations
+const forceConfig = {
+    strength: {
+        sameType: 0.7,
+        userImage: 0.5,
+        default: 0.3,
+        variation: {
+            min: 0.8,  // -20% variation
+            max: 1.2   // +20% variation
+        }
+    },
+    distance: {
+        image: 180,
+        user: 120,
+        attribute: 80,
+        variation: {
+            min: 0.9,  // -10% variation
+            max: 1.1   // +10% variation
+        }
+    }
+};
+
+// Utility function to generate consistent random variations
+function getVariation(seed, config) {
+    // Create a simple hash of the seed string
+    const hash = seed.split('').reduce((acc, char) => {
+        return ((acc << 5) - acc) + char.charCodeAt(0) | 0;
+    }, 0);
+    
+    // Generate a seeded random number between 0 and 1
+    const random = (Math.sin(hash) + 1) / 2;
+    
+    // Scale to our desired range
+    return config.min + (random * (config.max - config.min));
+}
+
 export function setupGraph(svgElement, data, width, height, theme) {
     // Initialize performance monitor only in development
     const monitor = process.env.NODE_ENV === 'development' 
@@ -137,17 +173,65 @@ export function setupGraph(svgElement, data, width, height, theme) {
     const simulation = d3.forceSimulation(data.nodes)
         .force('link', d3.forceLink(data.links)
             .id(d => d.id)
-            .distance(100)
-            .strength(0.1))
+            .distance(link => {
+                const sourceType = link.source.type;
+                const targetType = link.target.type;
+                
+                // Set link distances based on connected node types
+                if (sourceType === 'image' || targetType === 'image') {
+                    return forceConfig.distance.image * getVariation(`${sourceType}${targetType}`, forceConfig.distance.variation);
+                } else if (sourceType === 'user' || targetType === 'user') {
+                    return forceConfig.distance.user * getVariation(`${sourceType}${targetType}`, forceConfig.distance.variation);
+                } else {
+                    return forceConfig.distance.attribute * getVariation(`${sourceType}${targetType}`, forceConfig.distance.variation);
+                }
+            })
+            .strength(link => {
+                const sourceType = link.source.type;
+                const targetType = link.target.type;
+                
+                // Stronger links between same type nodes and user-image connections
+                if (sourceType === targetType) {
+                    return forceConfig.strength.sameType * getVariation(`${sourceType}${targetType}`, forceConfig.strength.variation);
+                } else if ((sourceType === 'user' && targetType === 'image') ||
+                         (sourceType === 'image' && targetType === 'user')) {
+                    return forceConfig.strength.userImage * getVariation(`${sourceType}${targetType}`, forceConfig.strength.variation);
+                } else {
+                    return forceConfig.strength.default * getVariation(`${sourceType}${targetType}`, forceConfig.strength.variation);
+                }
+            }))
         .force('charge', d3.forceManyBody()
-            .strength(-300)
+            .strength(node => {
+                // Set repulsion force based on node type
+                switch (node.type) {
+                    case 'image':
+                        return -500; // Strong repulsion for images
+                    case 'user':
+                        return -300; // Medium repulsion for users
+                    default:
+                        return -100; // Light repulsion for attributes
+                }
+            })
             .distanceMax(500)
             .distanceMin(50))
         .force('center', d3.forceCenter(width / 2, height / 2))
         .force('collide', d3.forceCollide()
-            .radius(50)
+            .radius(d => {
+                // Set collision radius based on node type
+                if (d.type === 'image') {
+                    return 90; // Larger collision area for images
+                } else if (d.type === 'user') {
+                    return 40; // Medium collision area for users
+                } else {
+                    return 20; // Small collision area for attributes
+                }
+            })
             .strength(0.7)
-            .iterations(2));
+            .iterations(2))
+        .alpha(0.3)         // Initial activity level
+        .alphaDecay(0.02)   // Slower decay for more stable layout
+        .alphaTarget(0.05)  // Keep slight movement
+        .velocityDecay(0.3);// Smooth movement
 
     // Update function for force simulation
     simulation.on('tick', () => {
