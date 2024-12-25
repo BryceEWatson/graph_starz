@@ -34,13 +34,13 @@ export async function GET(request) {
     try {
         const session = await getServerSession(authOptions);
         
-        if (!session) {
-            return NextResponse.json(null);
-        }
-
-        return NextResponse.json(session);
+        // Always return a valid JSON response
+        return NextResponse.json(session || { user: null });
     } catch (error) {
-        console.error('Error getting session:', error);
-        return NextResponse.json(null);
+        // Only log actual errors, not missing session errors
+        if (error.name !== 'JWEDecryptionFailed') {
+            console.error('Error getting session:', error);
+        }
+        return NextResponse.json({ user: null });
     }
 }

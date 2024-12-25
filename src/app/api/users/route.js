@@ -90,7 +90,7 @@ export async function POST(request) {
     }
 }
 
-export async function GET(request) {
+export async function GET(_request) {
     try {
         // Get the authenticated session
         const session = await getServerSession(authOptions);

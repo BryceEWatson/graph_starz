@@ -40,14 +40,41 @@ export async function initializeApplication() {
         log('Initializing auth...');
         const authResult = await initializeAuth();
         if (!authResult.success) {
-            throw new Error(`Auth initialization failed: ${authResult.error}`);
+            throw new Error(`Auth initialization failed: ${authResult.errors?.join(', ')}`);
+        }
+        if (!authResult.testUser?.id) {
+            throw new Error('Auth initialization succeeded but no test user ID was returned');
         }
 
         // Initialize images with test user ID
         log('Initializing image processing...');
-        const imageResult = await initializeImages(authResult.testUser.id);
-        if (!imageResult.success) {
-            throw new Error(`Image initialization failed: ${imageResult.error}`);
+        let imageResult;
+        try {
+            log('Starting image initialization with test user: %s', authResult.testUser.id);
+            imageResult = await initializeImages(authResult.testUser.id);
+            
+            // Validate imageResult
+            if (!imageResult) {
+                log('Image initialization returned undefined result');
+                throw new Error('Image initialization returned undefined result');
+            }
+            
+            log('Image initialization result: %O', imageResult);
+            
+            if (!imageResult?.success) {
+                const errorMessage = imageResult?.error || imageResult?.message || JSON.stringify(imageResult) || 'Unknown error';
+                log('Image initialization failed: %s', errorMessage);
+                throw new Error(`Image initialization failed: ${errorMessage}`);
+            }
+        } catch (error) {
+            const errorMessage = error?.message || JSON.stringify(error) || 'Unknown error';
+            log('Image initialization error details: %O', {
+                error: error,
+                message: error?.message,
+                stack: error?.stack,
+                imageResult: imageResult
+            });
+            throw new Error(`Image initialization failed: ${errorMessage}`);
         }
 
         const result = {

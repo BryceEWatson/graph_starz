@@ -1,0 +1,110 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: graph-starz
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/client-name: graph-starz
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/startup-probe-period: "300s"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/execution-environment: "gen2"
+    spec:
+      serviceAccountName: starz-prod-backend
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - name: graph-starz
+          image: gcr.io/starz-439218/graph-starz:2024-12-24-09-09-27
+          ports:
+            - name: http1
+              containerPort: 3000
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXTAUTH_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "FRONTEND_URL"
+                  key: "latest"
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "NEXTAUTH_SECRET"
+                  key: "latest"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "starz-439218"
+            - name: DEBUG
+              value: "app:health,app:init"
+            - name: NEO4J_URI
+              valueFrom:
+                secretKeyRef:
+                  name: "NEO4J_URI"
+                  key: "latest"
+            - name: NEO4J_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "NEO4J_USER"
+                  key: "latest"
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "NEO4J_PASSWORD"
+                  key: "latest"
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: "GOOGLE_CLIENT_ID"
+                  key: "latest"
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "GOOGLE_CLIENT_SECRET"
+                  key: "latest"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "ANTHROPIC_API_KEY"
+                  key: "latest"
+            - name: GCS_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: "GCS_BUCKET_NAME"
+                  key: "latest"
+            - name: FRONTEND_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "FRONTEND_URL"
+                  key: "latest"
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: "GOOGLE_APPLICATION_CREDENTIALS"
+                  key: "latest"

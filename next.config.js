@@ -1,14 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
     },
   },
+  // Enable source maps in development
+  productionBrowserSourceMaps: false,
   images: {
-    // This enables the built-in image optimization API
     formats: ['image/webp'],
-    // Allow image processing for our test_images directory
     dangerouslyAllowSVG: false,
     contentDispositionType: 'attachment',
     remotePatterns: [
@@ -16,40 +17,30 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'lh3.googleusercontent.com',
         pathname: '/a/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+        pathname: '/**',
       }
     ],
   },
-  webpack: (config, { isServer, dev }) => {
-    // This helps Next.js find the proper Sharp installation
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      sharp$: require.resolve('sharp'),
-    }
-
-    if (isServer) {
-      // Handle node: protocol imports for server-side code
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        child_process: false,
-        fs: false,
-        path: false,
-        url: false,
-      }
-    }
-
-    // Configure source maps in development
-    if (dev) {
-      config.devtool = 'source-map';
-    }
-
-    return config
-  },
-  // Enable source maps in development
-  productionBrowserSourceMaps: false,
   // Ensure environment variables are loaded
   env: {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-  },
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+    NEO4J_URI: process.env.NEO4J_URI,
+    NEO4J_USER: process.env.NEO4J_USER,
+    NEO4J_PASSWORD: process.env.NEO4J_PASSWORD,
+    PROD_NEO4J_URI: process.env.PROD_NEO4J_URI,
+    PROD_NEO4J_USER: process.env.PROD_NEO4J_USER,
+    PROD_NEO4J_PASSWORD: process.env.PROD_NEO4J_PASSWORD,
+    GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME,
+    FRONTEND_URL: process.env.FRONTEND_URL
+  }
 }
 
 module.exports = nextConfig

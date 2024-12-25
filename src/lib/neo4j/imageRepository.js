@@ -23,10 +23,13 @@ export async function saveImageData(imageData, analysis, userId) {
 
   console.log('Saving image data to Neo4j...');
   console.log('User ID:', userId);
-  console.log('Image metadata:', JSON.stringify(imageData.metadata, null, 2));
+  console.log('Image data:', JSON.stringify({
+    filename: imageData.filename,
+    contentType: imageData.contentType,
+    pHash: imageData.pHash
+  }, null, 2));
   console.log('Analysis:', JSON.stringify(analysis, null, 2));
   console.log('Title from analysis:', analysis.title);
-  console.log('Title from metadata:', imageData.metadata.title);
 
   const driver = await getDriver();
   const session = driver.session();
@@ -45,153 +48,139 @@ export async function saveImageData(imageData, analysis, userId) {
     console.log('Checking for duplicates and saving image data...');
     const result = await session.executeWrite(async (tx) => {
       // Check for similar images using database-level comparison
-      console.log('Checking for similar images with pHash:', imageData.metadata.pHash);
+      console.log('Checking for similar images with pHash:', imageData.pHash);
       const similarImage = await tx.run(`
         MATCH (i:Image)
         WHERE i.pHash IS NOT NULL
-        WITH i, $pHash as targetHash,
-          // Convert hex strings to binary strings
-          reduce(acc="", h1 IN split(i.pHash, "") | 
-            acc + CASE h1
-              WHEN "0" THEN "0000" WHEN "1" THEN "0001" WHEN "2" THEN "0010" WHEN "3" THEN "0011"
-              WHEN "4" THEN "0100" WHEN "5" THEN "0101" WHEN "6" THEN "0110" WHEN "7" THEN "0111"
-              WHEN "8" THEN "1000" WHEN "9" THEN "1001" WHEN "a" THEN "1010" WHEN "b" THEN "1011"
-              WHEN "c" THEN "1100" WHEN "d" THEN "1101" WHEN "e" THEN "1110" WHEN "f" THEN "1111"
-              ELSE "0000" END) as hash1Bin,
-          reduce(acc="", h2 IN split($pHash, "") | 
-            acc + CASE h2
-              WHEN "0" THEN "0000" WHEN "1" THEN "0001" WHEN "2" THEN "0010" WHEN "3" THEN "0011"
-              WHEN "4" THEN "0100" WHEN "5" THEN "0101" WHEN "6" THEN "0110" WHEN "7" THEN "0111"
-              WHEN "8" THEN "1000" WHEN "9" THEN "1001" WHEN "a" THEN "1010" WHEN "b" THEN "1011"
-              WHEN "c" THEN "1100" WHEN "d" THEN "1101" WHEN "e" THEN "1110" WHEN "f" THEN "1111"
-              ELSE "0000" END) as hash2Bin
-        WITH i, reduce(distance = 0, idx IN range(0, size(hash1Bin)-1) |
-          distance + CASE WHEN substring(hash1Bin, idx, 1) <> substring(hash2Bin, idx, 1) THEN 1 ELSE 0 END) as distance
-        WHERE distance <= $threshold
-        RETURN i.id
-        LIMIT 1
-      `, {
-        pHash: imageData.metadata.pHash,
-        threshold: 3
-      });
+        AND i.pHash = $pHash
+        RETURN i.id as id
+      `, { pHash: imageData.pHash });
 
       if (similarImage.records.length > 0) {
-        const similarId = similarImage.records[0].get('i.id');
-        console.log('Found similar image:', similarId);
-        return { id: similarId, isNew: false };
+        console.log('Found similar image:', similarImage.records[0].get('id'));
+        return { id: similarImage.records[0].get('id'), isDuplicate: true };
       }
 
-      // Create unique ID for the image
-      const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      console.log('Creating new image with ID:', imageId);
-
-      // Normalize all attributes (ensure arrays exist and handle null/undefined)
-      const style = (analysis.style || []).map(normalizeAttribute).filter(Boolean);
-      const technique = (analysis.technique || []).map(normalizeAttribute).filter(Boolean);
-      const mood = (analysis.mood || []).map(normalizeAttribute).filter(Boolean);
-      const composition = (analysis.composition || []).map(normalizeAttribute).filter(Boolean);
-      const colors = (analysis.dominantColors || []).map(normalizeAttribute).filter(Boolean);
-      const objects = (analysis.objects || []).map(normalizeAttribute).filter(Boolean);
-
-      // Create image node with metadata in a single query
-      const queryResult = await tx.run(`
-        // Match user
-        MATCH (u:User {id: $userId})
-        WITH u
-        WHERE u IS NOT NULL
-
-        // Create image node
+      // Create image node
+      console.log('Creating image node...');
+      const imageResult = await tx.run(`
         CREATE (i:Image {
-          id: $imageId,
+          id: randomUUID(),
           title: $title,
           description: $description,
-          originalName: $originalName,
-          width: $width,
-          height: $height,
           pHash: $pHash,
-          thumbnailUrl: $thumbnailUrl,
-          previewUrl: $previewUrl,
-          fullUrl: $fullUrl,
-          uploadedAt: $uploadedAt,
-          createdAt: datetime()
+          filename: $filename,
+          contentType: $contentType,
+          createdAt: datetime(),
+          updatedAt: datetime()
         })
-
-        // Create relationships
-        WITH i, u
-        CREATE (u)-[:UPLOADED]->(i)
-
-        // Create style relationships
-        WITH i
-        FOREACH (styleName IN $style |
-          MERGE (s:Style {name: styleName})
-          CREATE (i)-[:HAS_STYLE]->(s)
-        )
-
-        // Create technique relationships
-        WITH i
-        FOREACH (techniqueName IN $technique |
-          MERGE (t:Technique {name: techniqueName})
-          CREATE (i)-[:USES_TECHNIQUE]->(t)
-        )
-
-        // Create mood relationships
-        WITH i
-        FOREACH (moodName IN $mood |
-          MERGE (m:Mood {name: moodName})
-          CREATE (i)-[:HAS_MOOD]->(m)
-        )
-
-        // Create composition relationships
-        WITH i
-        FOREACH (compositionName IN $composition |
-          MERGE (c:Composition {name: compositionName})
-          CREATE (i)-[:HAS_COMPOSITION]->(c)
-        )
-
-        // Create color relationships
-        WITH i
-        FOREACH (colorName IN $colors |
-          MERGE (c:Color {name: colorName})
-          CREATE (i)-[:HAS_COLOR]->(c)
-        )
-
-        // Create object relationships
-        WITH i
-        FOREACH (objectName IN $objects |
-          MERGE (o:Object {name: objectName})
-          CREATE (i)-[:CONTAINS_OBJECT]->(o)
-        )
-
         RETURN i.id as id
       `, {
-        imageId,
-        userId,
-        title: analysis.title || 'Untitled Image',
-        description: analysis.description || '',
-        originalName: imageData.metadata.originalName,
-        width: imageData.metadata.width,
-        height: imageData.metadata.height,
-        pHash: imageData.metadata.pHash,
-        thumbnailUrl: imageData.urls.thumbnail,
-        previewUrl: imageData.urls.preview,
-        fullUrl: imageData.urls.full,
-        uploadedAt: imageData.metadata.uploadedAt,
-        style,
-        technique,
-        mood,
-        composition,
-        colors,
-        objects
+        title: analysis.title,
+        description: analysis.description,
+        pHash: imageData.pHash,
+        filename: imageData.filename,
+        contentType: imageData.contentType
       });
 
-      console.log('Neo4j query result:', JSON.stringify(queryResult.records, null, 2));
-      return { id: imageId, isNew: true };
+      const imageId = imageResult.records[0].get('id');
+      console.log('Created image node:', imageId);
+
+      // Create relationships for all attributes
+      console.log('Creating attribute relationships...');
+      
+      // Create style relationships
+      for (const style of analysis.style || []) {
+        const normalizedStyle = normalizeAttribute(style);
+        if (normalizedStyle) {
+          await tx.run(`
+            MERGE (s:Style {name: $style})
+            WITH s
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:HAS_STYLE]->(s)
+          `, { style: normalizedStyle, imageId });
+        }
+      }
+
+      // Create technique relationships
+      for (const technique of analysis.technique || []) {
+        const normalizedTechnique = normalizeAttribute(technique);
+        if (normalizedTechnique) {
+          await tx.run(`
+            MERGE (t:Technique {name: $technique})
+            WITH t
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:USES_TECHNIQUE]->(t)
+          `, { technique: normalizedTechnique, imageId });
+        }
+      }
+
+      // Create mood relationships
+      for (const mood of analysis.mood || []) {
+        const normalizedMood = normalizeAttribute(mood);
+        if (normalizedMood) {
+          await tx.run(`
+            MERGE (m:Mood {name: $mood})
+            WITH m
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:HAS_MOOD]->(m)
+          `, { mood: normalizedMood, imageId });
+        }
+      }
+
+      // Create color relationships
+      for (const color of analysis.dominantColors || []) {
+        const normalizedColor = normalizeAttribute(color);
+        if (normalizedColor) {
+          await tx.run(`
+            MERGE (c:Color {name: $color})
+            WITH c
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:HAS_COLOR]->(c)
+          `, { color: normalizedColor, imageId });
+        }
+      }
+
+      // Create object relationships
+      for (const object of analysis.objects || []) {
+        const normalizedObject = normalizeAttribute(object);
+        if (normalizedObject) {
+          await tx.run(`
+            MERGE (o:Object {name: $object})
+            WITH o
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:CONTAINS_OBJECT]->(o)
+          `, { object: normalizedObject, imageId });
+        }
+      }
+
+      // Create composition relationships
+      for (const composition of analysis.composition || []) {
+        const normalizedComposition = normalizeAttribute(composition);
+        if (normalizedComposition) {
+          await tx.run(`
+            MERGE (c:Composition {name: $composition})
+            WITH c
+            MATCH (i:Image {id: $imageId})
+            MERGE (i)-[:USES_COMPOSITION]->(c)
+          `, { composition: normalizedComposition, imageId });
+        }
+      }
+
+      // Create user relationship
+      console.log('Creating user relationship...');
+      await tx.run(`
+        MATCH (i:Image {id: $imageId})
+        MATCH (u:User {id: $userId})
+        MERGE (u)-[:UPLOADED]->(i)
+      `, { imageId, userId });
+
+      return { id: imageId, isDuplicate: false };
     });
 
-    console.log('Successfully saved image data:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
-    console.error('Error saving image data to Neo4j:', error);
+    console.error('Error saving image data:', error);
     throw error;
   } finally {
     await session.close();

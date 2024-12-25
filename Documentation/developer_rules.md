@@ -102,6 +102,14 @@
    - Ensure proper error propagation
    - Maintain data integrity across components
 
+## Code Quality
+
+1. **Keep It Simple**
+   - Solve problems using existing system features before creating new ones
+   - Don't add complexity without clear justification
+   - If a solution seems overly complex, it probably is
+   - Question any solution that requires multiple new files or systems
+
 ## Testing
 
 1. **Test File Organization**

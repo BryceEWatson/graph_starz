@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { createUser, findUserById } from '../../../../lib/neo4j/userRepository';
 
 export async function POST(request) {
-    // Only allow test mode in development
-    if (process.env.NODE_ENV !== 'development') {
+    // Allow test mode in development or when explicitly enabled
+    const allowTestMode = process.env.NODE_ENV === 'development' || process.env.ALLOW_TEST_MODE === 'true';
+    if (!allowTestMode) {
         return NextResponse.json({ error: 'Test mode not available in production' }, { status: 403 });
     }
 

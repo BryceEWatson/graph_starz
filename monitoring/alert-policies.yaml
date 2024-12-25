@@ -1,0 +1,99 @@
+displayName: "Graph Starz Alert Policies"
+documentation:
+  content: "Alert policies for Graph Starz production monitoring"
+  mimeType: "text/markdown"
+
+policies:
+  - displayName: "High Error Rate"
+    documentation:
+      content: "Alerts when error rate exceeds normal threshold"
+    conditions:
+      - displayName: "Error Rate > 1%"
+        filter: >
+          resource.type="cloud_run_revision"
+          resource.labels.service_name="graph-starz"
+          metric.type="logging.googleapis.com/user/graph-starz-errors"
+        thresholdFilter:
+          comparison: COMPARISON_GT
+          threshold: 1.0
+          duration: 300s
+    alertStrategy:
+      autoClose: 7200s
+    notificationChannels:
+      - "email"
+
+  - displayName: "High Latency"
+    documentation:
+      content: "Alerts when request latency exceeds threshold"
+    conditions:
+      - displayName: "P95 Latency > 2s"
+        filter: >
+          resource.type="cloud_run_revision"
+          resource.labels.service_name="graph-starz"
+          metric.type="run.googleapis.com/request_latencies"
+        aggregations:
+          - alignmentPeriod: 60s
+            perSeriesAligner: ALIGN_PERCENTILE_95
+        thresholdFilter:
+          comparison: COMPARISON_GT
+          threshold: 2000
+          duration: 300s
+    alertStrategy:
+      autoClose: 7200s
+    notificationChannels:
+      - "email"
+
+  - displayName: "High Memory Usage"
+    documentation:
+      content: "Alerts when memory usage is consistently high"
+    conditions:
+      - displayName: "Memory Usage > 80%"
+        filter: >
+          resource.type="cloud_run_revision"
+          resource.labels.service_name="graph-starz"
+          metric.type="run.googleapis.com/container/memory/utilizations"
+        thresholdFilter:
+          comparison: COMPARISON_GT
+          threshold: 0.8
+          duration: 300s
+    alertStrategy:
+      autoClose: 7200s
+    notificationChannels:
+      - "email"
+
+  - displayName: "Instance Count Alert"
+    documentation:
+      content: "Alerts when instance count approaches max limit"
+    conditions:
+      - displayName: "Instance Count > 8"
+        filter: >
+          resource.type="cloud_run_revision"
+          resource.labels.service_name="graph-starz"
+          metric.type="run.googleapis.com/container/instance_count"
+        thresholdFilter:
+          comparison: COMPARISON_GT
+          threshold: 8
+          duration: 300s
+    alertStrategy:
+      autoClose: 7200s
+    notificationChannels:
+      - "email"
+
+  - displayName: "Failed Health Checks"
+    documentation:
+      content: "Alerts on failed health check endpoints"
+    conditions:
+      - displayName: "Health Check Failures"
+        filter: >
+          resource.type="cloud_run_revision"
+          resource.labels.service_name="graph-starz"
+          metric.type="run.googleapis.com/container/startup_latencies"
+          metric.labels.startup_check_failed="true"
+        thresholdFilter:
+          comparison: COMPARISON_GT
+          threshold: 0
+          duration: 60s
+    alertStrategy:
+      autoClose: 3600s
+    notificationChannels:
+      - "email"

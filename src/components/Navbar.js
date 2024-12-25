@@ -29,7 +29,7 @@ export default function Navbar() {
                         </button>
                         {loading ? (
                             <div className="h-10 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                        ) : !session ? (
+                        ) : !session || !session.user ? (
                             <button
                                 onClick={() => signIn('google')}
                                 className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg transition-colors"
@@ -45,20 +45,13 @@ export default function Navbar() {
                                             src={session.user.image}
                                             alt={session.user.name || 'User avatar'}
                                             fill
-                                            className="rounded-full object-cover"
-                                            sizes="32px"
+                                            className="rounded-full"
                                         />
                                     </div>
-                                ) : (
-                                    <div className="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
-                                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                            {(session.user?.name || session.user?.email || '?').charAt(0).toUpperCase()}
-                                        </span>
-                                    </div>
-                                )}
+                                ) : null}
                                 <button
                                     onClick={() => signOut()}
-                                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                                    className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg transition-colors"
                                 >
                                     Sign Out
                                 </button>

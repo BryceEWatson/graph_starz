@@ -43,16 +43,16 @@ function hexToBinary(hex) {
  * @param {string} hash2 - Second hash as hex string
  * @returns {number} - Hamming distance (number of differing bits)
  */
-function hammingDistance(hash1, hash2) {
+export function hammingDistance(hash1, hash2) {
   // Validate hex format
   if (!/^[0-9a-f]{16}$/i.test(hash1) || !/^[0-9a-f]{16}$/i.test(hash2)) {
     throw new Error('Both hashes must be 16-character hex strings');
   }
 
-  // Convert hex strings to binary
+  // Convert hex to binary
   const bin1 = hexToBinary(hash1);
   const bin2 = hexToBinary(hash2);
-  
+
   // Count differing bits
   let distance = 0;
   for (let i = 0; i < bin1.length; i++) {
@@ -60,7 +60,7 @@ function hammingDistance(hash1, hash2) {
       distance++;
     }
   }
-  
+
   return distance;
 }
 
@@ -71,7 +71,7 @@ function hammingDistance(hash1, hash2) {
  * @param {number} threshold - Maximum allowed Hamming distance
  * @returns {boolean} - True if images are considered similar
  */
-function areSimilarImages(hash1, hash2, threshold = 10) {
+export function areSimilarImages(hash1, hash2, threshold = 10) {
   try {
     return hammingDistance(hash1, hash2) <= threshold;
   } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -85,7 +85,7 @@ function areSimilarImages(hash1, hash2, threshold = 10) {
  * @param {string} binaryHash - Binary hash from sharp-phash
  * @returns {string} - 16-character hexadecimal hash
  */
-function formatHash(binaryHash) {
+export function formatHash(binaryHash) {
   if (!binaryHash || typeof binaryHash !== 'string') {
     throw new Error('Invalid binary hash');
   }
@@ -99,9 +99,3 @@ function formatHash(binaryHash) {
   
   return hex;
 }
-
-module.exports = {
-  hammingDistance,
-  areSimilarImages,
-  formatHash
-};

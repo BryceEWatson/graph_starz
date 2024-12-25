@@ -13,9 +13,12 @@ export async function imageToBase64(buffer) {
 /**
  * Process an image from either a file path or buffer
  * @param {string|Buffer|ArrayBuffer} input - File path or buffer containing image data
+ * @param {Object} options - Processing options
+ * @param {string} options.filename - Original filename
+ * @param {string} options.contentType - Content type of the image
  * @returns {Promise<Object>} Processed image data
  */
-export async function processImage(input) {
+export async function processImage(input, { filename = 'image.webp', contentType = 'image/webp' } = {}) {
   let imageBuffer;
   
   if (typeof input === 'string') {
@@ -33,6 +36,8 @@ export async function processImage(input) {
 
   // Get pHash first for duplicate detection
   const pHash = await phash(imageBuffer);
+  // Convert pHash to string if it's an object
+  const pHashString = typeof pHash === 'object' ? pHash.toString() : pHash;
 
   // Get image dimensions
   const metadata = await sharp(imageBuffer).metadata();
@@ -60,7 +65,9 @@ export async function processImage(input) {
   ]);
 
   return {
-    pHash,
+    pHash: pHashString,
+    filename,
+    contentType,
     images: {
       thumbnail: processedImages[0],
       preview: processedImages[1],

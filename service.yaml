@@ -1,0 +1,30 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: graph-starz
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/minScale: "1"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/starz-439218/graph-starz:2024-12-20-10-05-21
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          startupProbe:
+            tcpSocket:
+              port: 3000
+            periodSeconds: 240
+            timeoutSeconds: 60
+            failureThreshold: 3
+          env:
+            - name: NODE_ENV
+              value: production

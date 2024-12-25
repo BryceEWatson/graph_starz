@@ -2,16 +2,6 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error('ANTHROPIC_API_KEY environment variable is required');
-}
-
-console.log('Anthropic API Key:', process.env.ANTHROPIC_API_KEY ? 'Set' : 'Not set');
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 const SUPPORTED_MIME_TYPES = ['image/webp', 'image/jpeg', 'image/png', 'image/gif'];
 
 function validateMimeType(mimeType) {
@@ -23,6 +13,18 @@ function validateMimeType(mimeType) {
 }
 
 export async function analyzeImage(imageData, mimeType = 'image/webp') {
+  // Check for API key at runtime
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY environment variable is required');
+  }
+
+  // Initialize client with API key
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
+
+  console.log('Anthropic API Key:', process.env.ANTHROPIC_API_KEY ? 'Set' : 'Not set');
+
   console.log('Analyzing image...');
   try {
     const validatedMimeType = validateMimeType(mimeType);
@@ -128,34 +130,63 @@ export async function analyzeImage(imageData, mimeType = 'image/webp') {
       throw new Error('Empty or invalid response from Anthropic API');
     }
 
-    if (message.content[0].type !== 'tool_use') {
-      throw new Error(`Unexpected response type from Anthropic API: ${message.content[0].type}`);
+    // Handle both tool_use and tool_calls response types
+    const content = message.content[0];
+    if (content.type !== 'tool_use' && content.type !== 'tool_calls') {
+      throw new Error(`Unexpected response type from Anthropic API: ${content.type}`);
     }
 
-    const toolUse = message.content[0];
-    if (!toolUse?.name || toolUse.name !== 'extract_image_metadata') {
-      throw new Error(`Unexpected tool use: ${toolUse?.name}`);
+    let toolOutput;
+    if (content.type === 'tool_use') {
+      // Handle tool_use response type
+      if (!content?.name || content.name !== 'extract_image_metadata') {
+        throw new Error(`Unexpected tool use: ${content?.name}`);
+      }
+      toolOutput = content.input;
+    } else {
+      // Handle tool_calls response type
+      const toolCalls = content.tool_calls;
+      if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
+        throw new Error('No tool calls found in response');
+      }
+
+      const toolCall = toolCalls[0];
+      if (!toolCall?.name || toolCall.name !== 'extract_image_metadata') {
+        throw new Error(`Unexpected tool call: ${toolCall?.name}`);
+      }
+
+      if (!toolCall?.output) {
+        throw new Error('Invalid or missing tool output');
+      }
+
+      // Parse the tool output
+      try {
+        toolOutput = typeof toolCall.output === 'string' ? JSON.parse(toolCall.output) : toolCall.output;
+      } catch (parseError) {
+        console.error('Failed to parse tool output:', parseError);
+        throw new Error('Invalid tool output format');
+      }
     }
 
-    if (!toolUse?.input || typeof toolUse.input !== 'object') {
-      throw new Error('Invalid or missing tool input');
+    if (!toolOutput || typeof toolOutput !== 'object') {
+      throw new Error('Invalid or missing tool output data');
     }
 
     // Ensure all array fields exist and are arrays
-    const input = toolUse.input;
     const defaultArray = [];
-    input.style = Array.isArray(input.style) ? input.style : defaultArray;
-    input.technique = Array.isArray(input.technique) ? input.technique : defaultArray;
-    input.mood = Array.isArray(input.mood) ? input.mood : defaultArray;
-    input.composition = Array.isArray(input.composition) ? input.composition : defaultArray;
-    input.dominantColors = Array.isArray(input.dominantColors) ? input.dominantColors : defaultArray;
-    input.objects = Array.isArray(input.objects) ? input.objects : defaultArray;
+    toolOutput.style = Array.isArray(toolOutput.style) ? toolOutput.style : defaultArray;
+    toolOutput.technique = Array.isArray(toolOutput.technique) ? toolOutput.technique : defaultArray;
+    toolOutput.mood = Array.isArray(toolOutput.mood) ? toolOutput.mood : defaultArray;
+    toolOutput.composition = Array.isArray(toolOutput.composition) ? toolOutput.composition : defaultArray;
+    toolOutput.dominantColors = Array.isArray(toolOutput.dominantColors) ? toolOutput.dominantColors : defaultArray;
+    toolOutput.objects = Array.isArray(toolOutput.objects) ? toolOutput.objects : defaultArray;
 
     // Ensure string fields exist
-    input.title = input.title || 'Untitled';
-    input.description = input.description || '';
+    toolOutput.title = toolOutput.title || 'Untitled';
+    toolOutput.description = toolOutput.description || '';
 
-    return input;
+    console.log('Extracted metadata:', JSON.stringify(toolOutput, null, 2));
+    return toolOutput;
   } catch (error) {
     console.error('Error in analyzeImage:', error);
     throw error;

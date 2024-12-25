@@ -3,7 +3,7 @@
 import debug from 'debug';
 import { getDriver } from '../neo4j/client.js';
 
-const log = debug('app:init:state');
+const _log = debug('app:init:state');
 
 // Track if we've initialized during this server instance
 let hasInitialized = false;

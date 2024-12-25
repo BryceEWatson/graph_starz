@@ -1,0 +1,250 @@
+---
+name: Graph Starz BDD Feature Index
+description: Central index of product features and development guidelines for Graph Starz
+version: 1.1.0
+last_updated: "2024-12-23"
+
+vision:
+  reference: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/product_vision.md"
+  key_aspects:
+    - name: Core Problem
+      description: "Image sharing platforms lack effective ways to browse AI-generated images and find related content"
+    - name: Solution
+      description: "Graph-based platform leveraging AI understanding to create interconnected network of images"
+    - name: Data Structure
+      description: "Users, Images, and Attributes connected in a meaningful graph structure"
+  
+  feature_alignment:
+    description: Guidelines for ensuring features align with product vision
+    prioritization:
+      criteria:
+        - Vision fit and alignment with product goals
+        - Direct user value and benefit
+      factors:
+        - Expected user impact and benefit
+        - Development complexity
+        - Required prerequisites
+        - Potential risks and challenges
+
+    implementation:
+      evaluation_criteria:
+        - Solution effectiveness
+        - Long-term maintainability
+        - Future scalability
+
+product_features:
+  description: Core product features from Graph Starz vision
+  verification_rules:
+    - Compare feature files against implemented code
+    - Verify all scenarios have corresponding tests
+    - Document any discrepancies in research_questions.md
+    - Update features or code to maintain alignment
+  scenarios:
+    - name: Image Upload and AI Analysis
+      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/image_upload.feature"
+      scenarios:
+        - Image Upload Flow
+        - AI Attribute Detection
+        - Metadata Extraction
+        - Duplicate Detection
+        
+    - name: Graph Visualization
+      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/graph_visualization.feature"
+      scenarios:
+        - Graph Display
+        - Node Properties
+        - Image Relationships
+        - Interactive Navigation
+        - Graph Filtering
+
+    - name: User Authentication
+      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/authentication.feature"
+      scenarios:
+        - Google Sign In
+        - Session Management
+        - User Profile
+
+    - name: Production Readiness
+      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/production_readiness.feature"
+      scenarios:
+        - Secret Validation
+        - Docker Container Build
+        - Cloud Run Deployment
+        - Runtime Configuration
+        - Error Handling and Logging
+        - Application Initialization
+
+development_guidelines:
+  description: Essential development practices and standards
+  code_quality:
+    error_handling:
+      description: Guidelines for robust error management
+      rules:
+        - Use specific try-catch blocks for known error types
+        - Implement consistent error response format
+        - Include appropriate HTTP status codes
+        - Log errors with context (timestamp, type, stack trace)
+        - Clean up resources on error
+        - Follow language-specific error guidelines
+        - Ensure errors are properly logged to Cloud Logging
+        - Include component-specific error context
+        - Implement proper error recovery mechanisms
+        - Use standardized error response structure
+
+    initialization_guidelines:
+      description: Standards for application initialization
+      rules:
+        - Component verification:
+          - Test all external service connections
+          - Verify database indices and schema
+          - Check API key access and permissions
+        - Status reporting:
+          - Report detailed status for each component
+          - Include success/failure indicators
+          - Provide error context when needed
+        - Error recovery:
+          - Make initialization idempotent
+          - Allow safe retries
+          - Clean up partial initializations
+        - Monitoring:
+          - Log initialization status
+          - Track initialization metrics
+          - Alert on initialization failures
+
+    powershell_guidelines:
+      description: PowerShell-specific coding standards
+      rules:
+        - Error message formatting:
+          - Do not add colons before error variables (e.g., use "Error $_" not "Error: $_")
+          - Use string concatenation for error messages (e.g., "Failed to test $endpoint $_")
+        - Variable expansion:
+          - Use double quotes for variable expansion
+          - Test all error message outputs before committing
+        - Error handling:
+          - Always capture and display the full error object ($_)
+          - Use -ErrorAction Stop for critical operations
+        - Output formatting:
+          - Keep error messages concise and clear
+          - Use Write-ColorOutput for consistent styling
+        - YAML handling:
+          - Use [System.IO.File]::WriteAllText() for YAML files to prevent BOM and encoding issues
+          - Validate YAML structure after string replacements
+          - Be cautious with variable expansion in YAML content
+
+    cloud_run_guidelines:
+      description: Standards for Cloud Run deployments
+      secret_management:
+        - Secret reference format:
+          - Use 'name' field with simple secret names (e.g., "NEXTAUTH_SECRET")
+          - Avoid full project paths in secret names
+          - Only use alphanumeric characters, hyphens, or underscores
+        - Version handling:
+          - Use 'key' field instead of 'version'
+          - Prefer specific versions over "latest" for stability
+        - Project context:
+          - Cloud Run automatically finds secrets in same project
+          - No need to specify project paths
+        - Validation:
+          - Verify secret access before deployment
+          - Check secret reference format in YAML
+          - Test with specific versions before using "latest"
+        - Error handling:
+          - Log deployment errors with context
+          - Maintain zero-downtime during updates
+          - Preserve previous version as backup
+          - Clean up old images after verification
+
+    modularity:
+      description: Guidelines for maintainable code structure
+      principles:
+        - Single responsibility per component
+        - Separation of concerns
+        - Modularity and testability
+
+    change_management:
+      description: Guidelines for making and documenting code changes
+      rules:
+        - Always explain changes clearly before implementing them
+        - List all files being modified and why
+        - Describe the purpose of each significant change
+        - Document any new dependencies or configuration requirements
+        - Explain how changes affect the initialization flow
+        - Test changes thoroughly before committing
+        - Update documentation to reflect changes
+        - When changing configuration or secrets:
+          - Document the source of each configuration value
+          - Explain how values are passed between components
+          - Verify changes in both development and production contexts
+        - When modifying deployment scripts:
+          - Test with all required credentials and configurations
+          - Verify changes in a clean environment
+          - Document any new environment requirements
+
+  workflow:
+    development_process:
+      - Write tests before implementation (TDD)
+      - Document decisions and progress in journal
+      - Research and validate solutions before implementation
+      - Regular code reviews and pair programming with users and external team members
+      - Verify code matches BDD feature specifications
+
+    feature_verification:
+      description: Process for ensuring code-feature alignment
+      steps:
+        - Review feature file scenarios and requirements
+        - Locate corresponding code implementations
+        - Compare behavior specifications with actual code
+        - Run tests to verify feature coverage
+        - Document any gaps or inconsistencies
+      frequency:
+        - Before submitting code changes
+        - During code reviews
+        - When updating feature files
+
+    test_driven_development:
+      description: Guidelines for TDD practice
+      test_case_coverage:
+        - Expected behavior and normal operations
+        - Edge cases and boundary conditions
+        - Error handling scenarios
+      workflow:
+        - Write specific test cases with clear pass/fail criteria
+        - Write tests before implementing functionality
+        - Implement minimum code to make tests pass
+        - Refactor while maintaining passing tests
+        - Run full test suite on every code change
+      documentation:
+        - Document test cases in test files
+
+    research_process:
+      description: System for tracking and resolving knowledge gaps
+      gap_identification:
+        scenario:
+          - Document exact code and commands involved
+          - Record observed vs expected behavior
+          - Note system state and conditions
+          - Identify recurring patterns
+          - Pause to wait for research questions to get answered by the external team
+      research_questions:
+        format:
+          - Clear problem statement
+          - Current knowledge and attempts
+          - Specific, precise questions
+          - Supporting evidence (code/errors)
+        tracking:
+          - Add to "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/research_questions.md"
+          - Categorize and tag appropriately
+      solution_handling:
+        - Share knowledge in documentation
+
+    documentation:
+      - Keep this index up to date
+      - Keep product feature files up to date
+      - Ensure feature files accurately reflect code implementation
+      - Document any temporary feature-code mismatches in research_questions.md
+      - Update features and code in sync to maintain consistency
+
+  security:
+    core_principles:
+      - Input validation and sanitization
+      - Regular dependency updates

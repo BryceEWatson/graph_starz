@@ -1,17 +1,42 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { Storage } = require('@google-cloud/storage');
-const sharpPhash = require('sharp-phash');
-const { areSimilarImages, formatHash } = require('../utils/imageHash.js');
+import { Storage } from '@google-cloud/storage';
+import sharpPhash from 'sharp-phash';
+import { areSimilarImages, formatHash } from '../utils/imageHash.js';
+import { getGCSCredentials } from '../config/gcs.js';
+import debug from 'debug';
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-const storage = new Storage();
-const bucketName = process.env.GCS_BUCKET_NAME;
+const log = debug('app:storage:gcs');
 
-if (!bucketName) {
-  throw new Error('GCS_BUCKET_NAME environment variable is required');
+// Storage client singleton
+let storage = null;
+let bucket = null;
+
+/**
+ * Initialize the Storage client if not already initialized
+ * @returns {Promise<{storage: Storage, bucket: any}>}
+ */
+async function initializeStorage() {
+  if (storage && bucket) {
+    return { storage, bucket };
+  }
+
+  try {
+    const config = await getGCSCredentials();
+    storage = new Storage(config);
+
+    const bucketName = process.env.GCS_BUCKET_NAME;
+    if (!bucketName) {
+      throw new Error('GCS_BUCKET_NAME environment variable is required');
+    }
+
+    bucket = storage.bucket(bucketName);
+    return { storage, bucket };
+  } catch (error) {
+    log('Failed to initialize Storage client:', error);
+    throw error;
+  }
 }
-
-const bucket = storage.bucket(bucketName);
 
 // Hamming distance threshold for considering images as duplicates
 const SIMILARITY_THRESHOLD = 3;
@@ -30,27 +55,22 @@ async function updateHashPrefixCache() {
     return;
   }
 
+  const { bucket } = await initializeStorage();
   const [files] = await bucket.getFiles();
   hashPrefixCache.clear();
 
   await Promise.all(files.map(async (file) => {
     const [metadata] = await file.getMetadata();
-    const hash = metadata.metadata?.pHash;
+    const hash = metadata.metadata?.phash;
     if (hash && /^[0-9a-f]{16}$/i.test(hash)) {
-      // Validate prefix is exactly 4 hex characters
       const prefix = hash.substring(0, 4);
-      if (!/^[0-9a-f]{4}$/i.test(prefix)) {
-        console.warn(`Invalid hash prefix for file ${file.name}: ${prefix}`);
-        return;
-      }
-
       if (!hashPrefixCache.has(prefix)) {
         hashPrefixCache.set(prefix, []);
       }
       hashPrefixCache.get(prefix).push({
-        name: file.name,
         hash,
-        size: file.name.match(/-(?:thumbnail|preview|full)-/)?.[0]
+        name: file.name,
+        url: `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(file.name)}`
       });
     }
   }));
@@ -64,8 +84,13 @@ async function updateHashPrefixCache() {
  * @returns {Promise<string>} The perceptual hash in hex format
  */
 async function calculateImageHash(buffer) {
-  const binaryHash = await sharpPhash(buffer);
-  return formatHash(binaryHash);
+  // Handle both ESM and CommonJS versions of sharp-phash
+  const phashFn = typeof sharpPhash === 'function' ? sharpPhash : sharpPhash.default;
+  if (!phashFn) {
+    throw new Error('Failed to load sharp-phash function');
+  }
+  const hash = await phashFn(buffer);
+  return formatHash(hash);
 }
 
 /**
@@ -75,39 +100,35 @@ async function calculateImageHash(buffer) {
  * @returns {Promise<string|null>} Existing file URL if found, null otherwise
  */
 async function findSimilarImage(hash, filename) {
-  // Validate input hash first
-  if (!/^[0-9a-f]{16}$/i.test(hash)) {
-    throw new Error('Input hash must be a 16-character hex string');
+  if (!hash || hash.length !== 16) {
+    console.warn('Invalid hash format:', hash);
+    return null;
   }
 
-  // Extract size from filename
-  const targetSize = filename.match(/-(?:thumbnail|preview|full)-/)?.[0];
-  if (!targetSize) {
+  const prefix = hash.substring(0, 4);
+  if (!/^[0-9a-f]{4}$/i.test(prefix)) {
+    console.warn('Invalid hash prefix:', prefix);
     return null;
   }
 
   // Update cache if needed
   await updateHashPrefixCache();
 
-  // Get prefix for quick filtering
-  const prefix = hash.substring(0, 4);
-  
-  // Get all hashes that share the same prefix
-  const candidates = hashPrefixCache.get(prefix) || [];
-  
-  // Add candidates from neighboring prefixes to handle edge cases
-  const neighborPrefixes = getNeighboringPrefixes(prefix);
-  for (const neighborPrefix of neighborPrefixes) {
-    const neighborCandidates = hashPrefixCache.get(neighborPrefix) || [];
-    candidates.push(...neighborCandidates);
+  // Get files with same or neighboring prefixes
+  const prefixes = getNeighboringPrefixes(prefix);
+  const candidates = [];
+  for (const p of prefixes) {
+    if (hashPrefixCache.has(p)) {
+      candidates.push(...hashPrefixCache.get(p));
+    }
   }
 
-  // Filter by size and check similarity
+  // Check each candidate for similarity
   for (const candidate of candidates) {
-    if (candidate.size === targetSize && 
-        areSimilarImages(hash, candidate.hash, SIMILARITY_THRESHOLD)) {
-      const encodedFilePath = encodeURIComponent(candidate.name);
-      return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedFilePath}?alt=media`;
+    if (candidate.name === filename) continue;
+    const distance = areSimilarImages(hash, candidate.hash);
+    if (distance <= SIMILARITY_THRESHOLD) {
+      return candidate.url;
     }
   }
 
@@ -120,21 +141,18 @@ async function findSimilarImage(hash, filename) {
  * @returns {string[]} - Array of neighboring prefixes
  */
 function getNeighboringPrefixes(prefix) {
-  const prefixNum = parseInt(prefix, 16);
-  const neighbors = [];
+  const prefixes = [prefix];
+  const value = parseInt(prefix, 16);
   
-  // Add prefixes that differ by 1 bit
-  for (let i = 0; i < 16; i++) {
-    const neighbor = prefixNum ^ (1 << i);
-    if (neighbor !== prefixNum) {
-      const neighborHex = neighbor.toString(16).padStart(4, '0');
-      if (neighborHex.length === 4) {
-        neighbors.push(neighborHex);
-      }
-    }
+  // Add neighboring prefixes (±1 in hex)
+  if (value > 0) {
+    prefixes.push((value - 1).toString(16).padStart(4, '0'));
+  }
+  if (value < 0xffff) {
+    prefixes.push((value + 1).toString(16).padStart(4, '0'));
   }
   
-  return neighbors;
+  return prefixes;
 }
 
 /**
@@ -142,63 +160,81 @@ function getNeighboringPrefixes(prefix) {
  * @param {Buffer|string} buffer - The buffer or base64 string to upload
  * @param {string} filename - The desired filename in storage
  * @param {string} contentType - The MIME type of the file
- * @returns {Promise<{url: string, publicUrl: string, isNew: boolean, similarity?: number}>} The public URL and upload status
+ * @returns {Promise<{url: string, publicUrl: string, isNew: boolean, similarity?: number}>}
  */
-async function uploadToGCS(buffer, filename, contentType = 'image/webp') {
+export async function uploadToGCS(buffer, filename, contentType = 'image/webp') {
+  const { bucket } = await initializeStorage();
+  
+  if (!buffer) {
+    throw new Error('Buffer is required');
+  }
+
+  if (!filename) {
+    throw new Error('Filename is required');
+  }
+
   // Convert base64 to buffer if needed
-  const fileBuffer = typeof buffer === 'string' 
-    ? Buffer.from(buffer.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-    : buffer;
+  if (typeof buffer === 'string') {
+    buffer = Buffer.from(buffer.split(',')[1], 'base64');
+  }
 
-  try {
-    // Calculate perceptual hash of the image
-    const pHash = await calculateImageHash(fileBuffer);
-    
-    // Check if similar image exists
-    const existingUrl = await findSimilarImage(pHash, filename);
-    if (existingUrl) {
-      return { url: existingUrl, publicUrl: existingUrl, isNew: false };
-    }
+  // Calculate perceptual hash
+  const hash = await calculateImageHash(buffer);
 
-    // Create a reference to the new file
-    const file = bucket.file(filename);
+  // Check for similar images
+  const similarImageUrl = await findSimilarImage(hash, filename);
+  if (similarImageUrl) {
+    log('Duplicate detected - returning existing image URL: %s', similarImageUrl);
+    return {
+      url: similarImageUrl,
+      publicUrl: similarImageUrl,
+      isNew: false,
+      similarity: SIMILARITY_THRESHOLD,
+      hash
+    };
+  }
 
-    // Upload the file
-    await file.save(fileBuffer, {
+  // Upload new image
+  const file = bucket.file(filename);
+  const [exists] = await file.exists();
+  
+  if (exists) {
+    throw new Error(`File ${filename} already exists`);
+  }
+
+  // Upload the file
+  await file.save(buffer, {
+    metadata: {
       contentType,
       metadata: {
-        cacheControl: 'public, max-age=31536000', // Cache for 1 year
-        metadata: {
-          pHash // Store perceptual hash in metadata
-        }
-      },
-    });
+        phash: hash
+      }
+    }
+  });
 
-    // Generate Firebase Storage public URL
-    const encodedFilePath = encodeURIComponent(filename);
-    const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedFilePath}?alt=media`;
-    const publicUrl = url; // For backwards compatibility
-    
-    return { url, publicUrl, isNew: true };
-  } catch (error) {
-    throw new Error(`Failed to upload to GCS: ${error.message}`);
-  }
+  // Generate public URL
+  const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filename)}?alt=media`;
+  
+  return {
+    url: publicUrl,
+    publicUrl,
+    isNew: true,
+    hash
+  };
 }
 
 /**
  * Deletes all files from the bucket
  * @returns {Promise<void>}
  */
-async function clearBucket() {
+export async function clearBucket() {
+  const { bucket } = await initializeStorage();
   const [files] = await bucket.getFiles();
+  await Promise.all(files.map(file => file.delete()));
   
-  if (files.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    files.map(file => file.delete())
-  );
+  // Clear the cache
+  hashPrefixCache.clear();
+  lastCacheUpdate = 0;
 }
 
 /**
@@ -206,23 +242,10 @@ async function clearBucket() {
  * @param {string} title - The AI-generated title of the image
  * @param {string} size - The size variant of the image (thumbnail, preview, full)
  * @param {string} extension - The file extension (default: webp)
- * @returns {string} A unique filename
+ * @returns {string}
  */
-function generateImageFilename(title, size, extension = 'webp') {
-  // Convert title to URL-friendly format
-  const urlSafeTitle = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  // Add a timestamp to ensure uniqueness
+export function generateImageFilename(title, size, extension = 'webp') {
   const timestamp = Date.now();
-
-  return `${urlSafeTitle}-${size}-${timestamp}.${extension}`;
+  const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `${safeName}-${size}-${timestamp}.${extension}`;
 }
-
-module.exports = {
-  uploadToGCS,
-  clearBucket,
-  generateImageFilename
-};
