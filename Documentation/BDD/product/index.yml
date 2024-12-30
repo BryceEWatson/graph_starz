@@ -1,0 +1,73 @@
+features:
+  authentication:
+    description: User authentication and early access management
+    file: authentication.feature
+    scenarios:
+      - Google sign-in
+      - Session persistence
+      - Early access requests
+      - Whitelist management
+      - User access control
+    implementations:
+      - src/app/api/auth/[...nextauth]/options.js
+      - src/lib/neo4j/userRepository.js
+      - src/app/api/auth/whitelist/route.js
+      - src/app/page.js
+      - src/app/early-access/page.js
+
+  graph_visualization:
+    description: Interactive graph visualization of images, users, and attributes
+    file: graph_visualization.feature
+    scenarios:
+      - Graph display with D3.js
+      - Node properties and theming
+      - Interactive navigation
+      - Graph filtering (planned)
+    implementations:
+      - src/components/GraphVisualization.jsx
+      - src/hooks/useD3Graph.js
+      - src/lib/d3/setupGraph.js
+      - src/lib/d3/interactions.js
+
+  image_upload:
+    description: Image upload workflow with AI analysis
+    file: image_upload.feature
+    scenarios:
+      - First-time user sign-in
+      - Image upload process
+      - Unauthorized attempts
+      - Duplicate detection
+      - AI analysis with Anthropic
+      - Error handling
+    implementations:
+      - src/app/api/images/upload/route.js
+      - src/lib/neo4j/imageRepository.js
+      - src/lib/image/imageAnalyzer.js
+      - src/lib/neo4j/userRepository.js
+
+  production_readiness:
+    description: Production deployment and configuration
+    file: production_readiness.feature
+    scenarios:
+      - Secret validation
+      - Docker container build
+      - Cloud Run deployment
+      - Runtime configuration
+      - Error handling and logging
+    implementations:
+      - scripts/prod-deploy-cloud-run.ps1
+      - Dockerfile
+
+  theme_initialization:
+    description: Theme management and initialization
+    file: theme_initialization.feature
+    scenarios:
+      - SSR compatibility
+      - Theme provider initialization
+      - Theme toggle functionality
+      - Windows compatibility
+      - Error handling
+    implementations:
+      - src/components/ThemeProvider.jsx
+      - src/hooks/useTheme.js
+      - src/components/Navbar.js

@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env DEBUG=app:* rimraf .next && cross-env DEBUG=app:* next dev",
+    "check-syntax": "cross-env DEBUG=app:syntax node scripts/check-syntax.js",
+    "dev": "yarn check-syntax && cross-env DEBUG=app:* rimraf .next && cross-env DEBUG=app:* next dev",
     "dev:nocache": "next dev",
     "clean:dev": "rimraf .next && next dev",
     "clean:dev:debug": "cross-env DEBUG=app:* rimraf .next && cross-env DEBUG=app:* next dev",
-    "build": "next build",
+    "build": "yarn check-syntax && next build",
     "start": "next start",
     "lint": "next lint",
     "db:init": "cross-env DEBUG=db:init:* node src/lib/neo4j/init-db.js",
@@ -44,6 +45,8 @@
     "sharp-phash": "^2.2.0"
   },
   "devDependencies": {
+    "@swc/cli": "^0.5.2",
+    "@swc/core": "^1.10.4",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",

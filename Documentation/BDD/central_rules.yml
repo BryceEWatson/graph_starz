@@ -181,6 +181,10 @@ workflow:
     - Verify code matches BDD specifications.
     - Remove hypothetical content during reviews.
     - Update documentation to reflect state.
+    - Development uses auto-cache clearing:
+        description: The dev command automatically clears .next cache
+        command: "cross-env DEBUG=app:* rimraf .next && cross-env DEBUG=app:* next dev"
+        note: Manual cache clearing is not needed during development
 
 feature_verification:
   description: Process for code-feature alignment.

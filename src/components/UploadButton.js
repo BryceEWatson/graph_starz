@@ -67,7 +67,7 @@ export default function UploadButton() {
             setUploadStatus('Upload complete!');
             setUploadProgress(100);
 
-            // Refresh the graph data
+            // Refresh the data
             router.refresh();
 
             // Close modal after a delay
@@ -77,9 +77,9 @@ export default function UploadButton() {
                 setUploadProgress(0);
                 setUploadStatus('');
                 setImagePreview('');
-
-                // Force a hard refresh after the modal closes
-                window.location.reload();
+                
+                // Force a fetch of new graph data
+                window.dispatchEvent(new CustomEvent('refreshGraph'));
             }, 1500);
 
             // Clear the file input

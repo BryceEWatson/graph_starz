@@ -36,24 +36,28 @@ function UserAvatar({ user }) {
 
 export default function Navbar() {
   const { data: session } = useSession()
-  const { theme, toggleTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   const { isWhitelisted } = useWhitelist()
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark')
+  }
 
   const handleSignOut = async () => {
     const callbackUrl = process.env.NODE_ENV === 'development' 
       ? 'http://localhost:3000'
-      : 'https://graphstarz.com';
-      
+      : 'https://graphstarz.com'
+    
     await signOut({
       redirect: true,
       callbackUrl
-    });
-  };
+    })
+  }
 
   if (!session || !session.user) {
     return (
       <nav className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow-sm">
-        <div className="flex-1"></div>
+        <div className="flex-1" />
         <div className="flex items-center space-x-4">
           <button
             onClick={() => signIn('google')}
@@ -77,11 +81,21 @@ export default function Navbar() {
         >
           {theme === 'dark' ? (
             <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth="2" 
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+              />
             </svg>
           ) : (
             <svg className="w-5 h-5 text-gray-800 dark:text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth="2" 
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+              />
             </svg>
           )}
         </button>

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 
-const ThemeContext = createContext()
+const ThemeContext = createContext(undefined)
 
 export function useTheme() {
   const context = useContext(ThemeContext)
@@ -12,82 +12,45 @@ export function useTheme() {
   return context
 }
 
-function initializeTheme() {
-  if (typeof window === 'undefined') return 'system'
-  
-  try {
-    const stored = localStorage.getItem('theme')
-    if (stored) return stored
-    
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark'
-    }
-    
-    return 'system'
-  } catch (e) {
-    console.error('Theme initialization error:', e)
-    return 'system'
-  }
-}
-
 export default function ThemeProvider({ children }) {
   const [mounted, setMounted] = useState(false)
-  const [theme, setTheme] = useState(initializeTheme)
+  const [isDark, setIsDark] = useState(false)
+  const [theme, setTheme] = useState('system')
 
   useEffect(() => {
+    // Get stored theme
+    const stored = localStorage.getItem('theme')
+    if (stored) {
+      setTheme(stored)
+    }
     setMounted(true)
   }, [])
 
   useEffect(() => {
     if (!mounted) return
 
-    try {
-      const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-      document.documentElement.classList.toggle('dark', isDark)
-      localStorage.setItem('theme', theme)
-      
-      // Update theme-color meta tag
-      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
-      if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', isDark ? '#1a1a1a' : '#ffffff')
-      }
-    } catch (e) {
-      console.error('Theme update error:', e)
-    }
+    // Update theme
+    const root = document.documentElement
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const dark = theme === 'dark' || (theme === 'system' && prefersDark)
+    
+    root.classList.toggle('dark', dark)
+    setIsDark(dark)
+    localStorage.setItem('theme', theme)
   }, [theme, mounted])
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = () => {
-      if (theme === 'system') {
-        const isDark = mediaQuery.matches
-        document.documentElement.classList.toggle('dark', isDark)
-      }
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [theme])
-
-  const toggleTheme = () => {
-    try {
-      const newTheme = theme === 'light' ? 'dark' : 'light'
-      setTheme(newTheme)
-    } catch (e) {
-      console.error('Theme toggle error:', e)
-    }
+  const value = {
+    theme,
+    setTheme,
+    isDark
   }
 
   if (!mounted) {
-    return (
-      <ThemeContext.Provider value={{ theme: 'system', toggleTheme: () => {} }}>
-        {children}
-      </ThemeContext.Provider>
-    )
+    return null
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   )

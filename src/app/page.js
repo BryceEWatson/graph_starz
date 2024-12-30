@@ -1,19 +1,53 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { useSession, signIn } from 'next-auth/react';
-import { GraphVisualization } from '../components/GraphVisualization';
-import { useTheme } from '@/components/ThemeProvider';
+import { useState, useEffect, useCallback } from 'react'
+import { useSession, signIn } from 'next-auth/react'
+import { GraphVisualization } from '../components/GraphVisualization'
+import { useTheme } from '@/components/ThemeProvider'
+import LoadingSpinner from '@/components/LoadingSpinner'
 
 export default function Home() {
-    const { data: session, status: authStatus } = useSession();
-    const [error, setError] = useState(null);
-    const [isCheckingWhitelist, setIsCheckingWhitelist] = useState(false);
-    const [isLoadingGraph, setIsLoadingGraph] = useState(false);
-    const [data, setData] = useState(null);
-    const [whitelistStatus, setWhitelistStatus] = useState(null);
-    const { theme } = useTheme();
-    const isDark = theme === 'dark';
+    const { data: session, status: authStatus } = useSession()
+    const [error, setError] = useState(null)
+    const [isCheckingWhitelist, setIsCheckingWhitelist] = useState(false)
+    const [isLoadingGraph, setIsLoadingGraph] = useState(false)
+    const [data, setData] = useState(null)
+    const [whitelistStatus, setWhitelistStatus] = useState(null)
+    const { theme } = useTheme()
+    const isDark = theme === 'dark'
+
+    // Fetch graph data function
+    const fetchGraphData = useCallback(async () => {
+        if (!whitelistStatus) return
+        setIsLoadingGraph(true)
+        try {
+            const res = await fetch('/api/graph')
+            if (!res.ok) {
+                if (res.status === 403) {
+                    throw new Error('Early access not yet granted')
+                }
+                throw new Error('Failed to fetch graph data')
+            }
+            const graphData = await res.json()
+            setData(graphData)
+        } catch (err) {
+            console.error('Error:', err)
+            setError(err.message)
+        } finally {
+            setIsLoadingGraph(false)
+        }
+    }, [whitelistStatus])
+
+    // Listen for graph refresh events
+    useEffect(() => {
+        const handleRefresh = () => {
+            console.log('Refreshing graph data...')
+            fetchGraphData()
+        }
+        
+        window.addEventListener('refreshGraph', handleRefresh)
+        return () => window.removeEventListener('refreshGraph', handleRefresh)
+    }, [fetchGraphData])
 
     // Debug logging
     useEffect(() => {
@@ -23,71 +57,47 @@ export default function Home() {
             email: session?.user?.email,
             whitelistStatus,
             isCheckingWhitelist
-        });
-    }, [authStatus, session, whitelistStatus, isCheckingWhitelist]);
+        })
+    }, [authStatus, session, whitelistStatus, isCheckingWhitelist])
 
     // Check whitelist status when user is authenticated
     useEffect(() => {
         console.log('Whitelist Effect Running:', {
             authStatus,
             hasEmail: Boolean(session?.user?.email)
-        });
+        })
 
         if (authStatus === 'authenticated' && session?.user?.email) {
-            console.log('Checking whitelist for:', session.user.email);
-            setIsCheckingWhitelist(true);
+            console.log('Checking whitelist for:', session.user.email)
+            setIsCheckingWhitelist(true)
             fetch(`/api/auth/whitelist?email=${encodeURIComponent(session.user.email)}`)
                 .then(res => {
-                    if (!res.ok) throw new Error('Failed to check whitelist status');
-                    return res.json();
+                    if (!res.ok) throw new Error('Failed to check whitelist status')
+                    return res.json()
                 })
                 .then(data => {
-                    console.log('Whitelist response:', data);
-                    setWhitelistStatus(data.isWhitelisted);
+                    console.log('Whitelist response:', data)
+                    setWhitelistStatus(data.isWhitelisted)
                     // Load graph data if whitelisted
                     if (data.isWhitelisted === true) {
-                        setIsLoadingGraph(true);
-                        return fetch('/api/graph')
-                            .then(res => {
-                                if (!res.ok) {
-                                    if (res.status === 403) {
-                                        throw new Error('Early access not yet granted');
-                                    }
-                                    throw new Error('Failed to fetch graph data');
-                                }
-                                return res.json();
-                            })
-                            .then(graphData => setData(graphData));
+                        fetchGraphData()
                     }
                 })
                 .catch(err => {
-                    console.error('Error:', err);
-                    setError(err.message);
+                    console.error('Error:', err)
+                    setError(err.message)
                 })
                 .finally(() => {
-                    setIsCheckingWhitelist(false);
-                    setIsLoadingGraph(false);
-                });
+                    setIsCheckingWhitelist(false)
+                })
         } else if (authStatus === 'unauthenticated') {
-            console.log('Resetting states due to unauthenticated status');
+            console.log('Resetting states due to unauthenticated status')
             // Reset states when user signs out
-            setWhitelistStatus(null);
-            setData(null);
-            setError(null);
+            setWhitelistStatus(null)
+            setData(null)
+            setError(null)
         }
-    }, [authStatus, session]);
-
-    // Loading spinner component
-    const LoadingSpinner = () => (
-        <div className="flex items-center justify-center min-h-screen">
-            <div className="text-center">
-                <div className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${isDark ? 'border-gray-200' : 'border-gray-900'} mx-auto`}></div>
-                <p className={`mt-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-                    {isLoadingGraph ? 'Loading graph...' : 'Loading...'}
-                </p>
-            </div>
-        </div>
-    );
+    }, [authStatus, session, fetchGraphData])
 
     // Debug: Log before each render
     console.log('Pre-render state:', {
@@ -95,31 +105,29 @@ export default function Home() {
         isCheckingWhitelist,
         whitelistStatus,
         hasSession: Boolean(session)
-    });
+    })
 
     // Show initial loading state
     if (authStatus === 'loading') {
-        console.log('Rendering loading state');
         return <LoadingSpinner />;
     }
 
-    // Show loading while checking whitelist status
-    if (isCheckingWhitelist) {
-        console.log('Rendering whitelist check loading state');
-        return <LoadingSpinner />;
+    // Show loading state while checking whitelist
+    if (isCheckingWhitelist || isLoadingGraph) {
+        return <LoadingSpinner message={isLoadingGraph ? 'Loading graph...' : 'Loading...'} />;
     }
 
     // Show graph for whitelisted users
     if (whitelistStatus === true) {
-        console.log('Rendering graph view');
+        console.log('Rendering graph view')
         if (isLoadingGraph || !data) {
-            return <LoadingSpinner />;
+            return <LoadingSpinner message="Loading graph..." />;
         }
         return <GraphVisualization data={data} />;
     }
 
     // Show early access or sign in states
-    console.log('Rendering main UI with authStatus:', authStatus);
+    console.log('Rendering main UI with authStatus:', authStatus)
     return (
         <div className={`flex min-h-screen items-center justify-center ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
             <div className={`max-w-md w-full space-y-8 p-8 rounded-xl shadow-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
@@ -165,12 +173,12 @@ export default function Home() {
                                     onClick={() => {
                                         // Don't proceed if no session or email
                                         if (!session?.user?.email) {
-                                            console.error('No valid session or email');
-                                            setError('Please sign in again');
-                                            return;
+                                            console.error('No valid session or email')
+                                            setError('Please sign in again')
+                                            return
                                         }
 
-                                        setIsCheckingWhitelist(true);
+                                        setIsCheckingWhitelist(true)
                                         fetch('/api/auth/whitelist', {
                                             method: 'POST',
                                             headers: {
@@ -179,15 +187,15 @@ export default function Home() {
                                             body: JSON.stringify({ email: session.user.email }),
                                         })
                                         .then(res => {
-                                            if (!res.ok) throw new Error('Failed to request access');
-                                            return res.json();
+                                            if (!res.ok) throw new Error('Failed to request access')
+                                            return res.json()
                                         })
                                         .then(() => setWhitelistStatus(false))
                                         .catch(err => {
-                                            console.error('Error:', err);
-                                            setError(err.message);
+                                            console.error('Error:', err)
+                                            setError(err.message)
                                         })
-                                        .finally(() => setIsCheckingWhitelist(false));
+                                        .finally(() => setIsCheckingWhitelist(false))
                                     }}
                                     disabled={isCheckingWhitelist || !session?.user?.email}
                                     className={`mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 

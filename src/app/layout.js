@@ -1,7 +1,7 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
 import Providers from '../components/Providers'
-import Navbar from '../components/Navbar'
+import ClientLayout from '../components/ClientLayout'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -13,15 +13,11 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <meta name="theme-color" content="dark" />
-      </head>
       <body className={inter.className} suppressHydrationWarning>
         <Providers>
-          <div className="fixed top-0 left-0 right-0 z-50">
-            <Navbar />
-          </div>
-          <main className="h-screen">{children}</main>
+          <ClientLayout>
+            {children}
+          </ClientLayout>
         </Providers>
       </body>
     </html>
