@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { initialize, getDriver } from '../../../lib/neo4j/api-client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/options';
+import { isEmailWhitelisted } from '../../../lib/neo4j/userRepository';
 import debug from 'debug';
 import { rateLimit } from '../../../lib/rate-limit';
 
@@ -42,12 +43,22 @@ export async function GET() {
         }
 
         // Check authentication
-        const authSession = await getServerSession(authOptions);
-        if (!authSession?.user?.email) {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.email) {
             log('Unauthorized access attempt');
             return NextResponse.json(
                 { error: 'Unauthorized: Please sign in to view graph data' },
                 { status: 401 }
+            );
+        }
+
+        // Check whitelist status
+        const isWhitelisted = await isEmailWhitelisted(session.user.email);
+        if (!isWhitelisted) {
+            log('Non-whitelisted user attempted to access graph:', session.user.email);
+            return NextResponse.json(
+                { error: 'Unauthorized: Early access not yet granted' },
+                { status: 403 }
             );
         }
 

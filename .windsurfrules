@@ -1,250 +1,227 @@
 ---
-name: Graph Starz BDD Feature Index
-description: Central index of product features and development guidelines for Graph Starz
-version: 1.1.0
-last_updated: "2024-12-23"
+name: Graph Starz LLM Coding Guidelines
+description: Concise coding guidelines for LLM code generation in Graph Starz (Next.js/Node.js focused).
+version: 1.4.0
+last_updated: "2024-12-30"
 
-vision:
-  reference: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/product_vision.md"
-  key_aspects:
-    - name: Core Problem
-      description: "Image sharing platforms lack effective ways to browse AI-generated images and find related content"
-    - name: Solution
-      description: "Graph-based platform leveraging AI understanding to create interconnected network of images"
-    - name: Data Structure
-      description: "Users, Images, and Attributes connected in a meaningful graph structure"
-  
-  feature_alignment:
-    description: Guidelines for ensuring features align with product vision
-    prioritization:
-      criteria:
-        - Vision fit and alignment with product goals
-        - Direct user value and benefit
-      factors:
-        - Expected user impact and benefit
-        - Development complexity
-        - Required prerequisites
-        - Potential risks and challenges
+general_principles:
+  description: Core principles for all JavaScript/Node.js code.
+  rules:
+    - id: KISS
+      description: Keep code simple, avoid over-engineering.
+      how_to: Use the simplest logic to achieve the desired output. Break down complex logic into smaller functions.
+      example: |
+        // BAD: Nested ifs
+        if (x > 0) { if (y < 10) { return true } }
+        // GOOD: Single condition
+        if (x > 0 && y < 10) { return true }
+    - id: POLA
+      description: Follow common JavaScript/Node.js coding patterns and conventions.
+      how_to: Use idiomatic style for JavaScript/Node.js (e.g., camelCase for variables, PascalCase for components).
+      example: |
+        // BAD: snake_case
+        let my_var_name = "hello";
+        // GOOD: camelCase
+        let myVarName = "hello";
+    - id: SRP
+      description: Each function/module has one specific job.
+      how_to: Separate different concerns into separate functions/modules.
+      example: |
+        // BAD: Single fn does many things
+        function processUser(data) { validate(); createObj(); save() }
+        // GOOD: Separate fns
+        function validate(data); function createObj(data); function save(obj)
+    - id: DRY
+      description: Avoid repeating code. Use shared functions.
+      how_to: Refactor duplicated code into reusable functions.
+      example: |
+        // BAD: Duplicated Logic
+        function area1(w, h) { return w * h } function area2(w, h) { return w * h }
+        // GOOD: Shared Function
+        function area(w, h) { return w * h } function area1(w,h){ area(w,h) } function area2(w,h) { area(w,h) }
+    - id: FailFast
+      description: Report errors early, don't try to guess.
+      how_to: Exit immediately with a clear error message when encountering critical errors.
+    - id: ValidateEnv
+      description: Validate env variables at startup.
+      how_to: Check type and format, provide clear error messages. Do not use default values for environment variables, throw an error if not present.
 
-    implementation:
-      evaluation_criteria:
-        - Solution effectiveness
-        - Long-term maintainability
-        - Future scalability
+testing:
+  description: Test-driven development and test rules.
+  rules:
+    - id: TestFirst
+      description: Write tests before implementation.
+      how_to: Define test cases (normal, edge, error) *before* writing any implementation code.
+      example: |
+        // Test Example: add(a, b)
+        // add(1, 2) -> 3 ; add(0,0) -> 0 ; add(-1, 1) -> 0
+        test('add', () => { expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0); expect(add(-1, 1)).toBe(0) });
+    - id: TestImpl
+      description: Implement minimal code to pass tests.
+      how_to: Write code to satisfy tests, with no more code than required.
+    - id: TestFiles
+      description: Test files in __tests__ dir, mock files in __mocks__ dir. Use .test.js extension.
+      how_to: Test files should be in `__tests__` directory, mock files in `__mocks__`, utilities in `__test_utils__`. Test files should end in `.test.js`
+    - id: JestMocking
+      description: Use Jest mocking consistently, reuse mocks. Mock D3 using d3Mock.js, ensure method chaining.
+      how_to: Ensure that reusable mocks are kept in `__mocks__`, and that the d3 mock from `__mocks__/d3Mock.js` is used for all d3 mocking.
 
-product_features:
-  description: Core product features from Graph Starz vision
-  verification_rules:
-    - Compare feature files against implemented code
-    - Verify all scenarios have corresponding tests
-    - Document any discrepancies in research_questions.md
-    - Update features or code to maintain alignment
-  scenarios:
-    - name: Image Upload and AI Analysis
-      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/image_upload.feature"
-      scenarios:
-        - Image Upload Flow
-        - AI Attribute Detection
-        - Metadata Extraction
-        - Duplicate Detection
-        
-    - name: Graph Visualization
-      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/graph_visualization.feature"
-      scenarios:
-        - Graph Display
-        - Node Properties
-        - Image Relationships
-        - Interactive Navigation
-        - Graph Filtering
+code_style:
+  description: Code formatting and structure rules.
+  rules:
+    - id: UseClient
+      description: Add 'use client' directive in NextJS client components.
+      how_to: Start client-side NextJS components with `use client`.
+      example: `"use client"; function MyComponent() { //.. }`
+    - id: NoSemicolons
+      description: Avoid trailing semicolons in NextJS.
+      how_to: Omit semicolons at the end of statements unless required by language.
+      example: `let a = 1` // Good
+    - id: LFLineEndings
+      description: Use LF line endings.
+      how_to: Ensure all files use LF, not CRLF endings.
+    - id: NoSpecialChars
+      description: Avoid special chars/emojis in code.
+      how_to: Avoid using special characters or emojis in code or documentation.
 
-    - name: User Authentication
-      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/authentication.feature"
-      scenarios:
-        - Google Sign In
-        - Session Management
-        - User Profile
+error_handling:
+  description: Error handling rules.
+  rules:
+      - id: TryCatch
+        description: Use try-catch blocks for potential errors.
+        how_to: Wrap code that may error in `try...catch`, log the error, and attempt to recover or rethrow an error.
+        example: |
+          try {
+            result = 1 / 0;
+          } catch (e) {
+            console.error('Error:', e);
+            result = 0;
+          }
+      - id: DetailedErrors
+        description: Provide detailed, human-readable error messages.
+        how_to: Include error type, message, and other useful error information like stack traces.
+        example: `console.error('Error: Cannot connect. Type: ${e}, Stack: ${trace}');`
+      - id: HTTPCodes
+        description: Use specific HTTP codes for API responses.
+        codes:
+          401: Authentication/Authorization
+          409: Resource conflicts
+          400: Invalid requests
+          500: Server errors
+      - id: PowerErrors
+        description: Powershell specific error message formatting rules.
+        how_to: Do not add colons before error variables (e.g., use "Error $_" not "Error: $_"). Use string concatenation for error messages (e.g., "Failed to test $endpoint $_").
 
-    - name: Production Readiness
-      file: "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/BDD/product/production_readiness.feature"
-      scenarios:
-        - Secret Validation
-        - Docker Container Build
-        - Cloud Run Deployment
-        - Runtime Configuration
-        - Error Handling and Logging
-        - Application Initialization
+deployment:
+  description: Deployment script rules.
+  rules:
+    - id: EnvChecks
+      description: Verify environment in deployment scripts.
+      how_to: Ensure that deployment scripts verify tools, env vars, and network connectivity to services.
+    - id: NoSilentFailures
+      description: Scripts must not continue if prerequisites are not met.
+      how_to: Validate each step in the deployment, and exit with error codes if a step fails.
+    - id: WindowsPowershell
+      description: Ensure Windows PowerShell compatibility for scripts. Use \\ for windows file paths.
+      how_to: Use Windows PowerShell as the primary shell, and ensure that all script paths use the \\ path separators.
 
-development_guidelines:
-  description: Essential development practices and standards
-  code_quality:
-    error_handling:
-      description: Guidelines for robust error management
-      rules:
-        - Use specific try-catch blocks for known error types
-        - Implement consistent error response format
-        - Include appropriate HTTP status codes
-        - Log errors with context (timestamp, type, stack trace)
-        - Clean up resources on error
-        - Follow language-specific error guidelines
-        - Ensure errors are properly logged to Cloud Logging
-        - Include component-specific error context
-        - Implement proper error recovery mechanisms
-        - Use standardized error response structure
+documentation:
+  description: Documentation and BDD rules.
+  rules:
+    - id: NoHypothetical
+      description: Documentation must be accurate, no hypothetical content.
+      how_to: Ensure documentation accurately reflects the current state of code.
+    - id: FeatureCodeAlign
+      description: Feature files must match code.
+      how_to: Ensure that feature files match the implemented functionality of the system. Update docs and features when code changes.
 
-    initialization_guidelines:
-      description: Standards for application initialization
-      rules:
-        - Component verification:
-          - Test all external service connections
-          - Verify database indices and schema
-          - Check API key access and permissions
-        - Status reporting:
-          - Report detailed status for each component
-          - Include success/failure indicators
-          - Provide error context when needed
-        - Error recovery:
-          - Make initialization idempotent
-          - Allow safe retries
-          - Clean up partial initializations
-        - Monitoring:
-          - Log initialization status
-          - Track initialization metrics
-          - Alert on initialization failures
+feature_integration:
+  description: Rules for integrating new features.
+  rules:
+      - id: APIConsistency
+        description: Maintain consistent APIs and data structures.
+        how_to: Follow existing API patterns and naming conventions, ensure backward compatibility, or document breaking changes.
+      - id: ComponentDeps
+        description: Map and update tests for affected components.
+        how_to: Map all components affected by a new feature, and ensure that each component has corresponding tests, and that mock data matches production data structures.
+      - id: SystemArch
+        description: Follow established architectural patterns.
+        how_to: Follow existing architecture patterns, maintain separation of concerns.
+      - id: DataConsistency
+        description: Use consistent data structures throughout.
+        how_to: Document data schemas and transformations, validate data at system boundaries, and maintain integrity across components.
 
-    powershell_guidelines:
-      description: PowerShell-specific coding standards
-      rules:
-        - Error message formatting:
-          - Do not add colons before error variables (e.g., use "Error $_" not "Error: $_")
-          - Use string concatenation for error messages (e.g., "Failed to test $endpoint $_")
-        - Variable expansion:
-          - Use double quotes for variable expansion
-          - Test all error message outputs before committing
-        - Error handling:
-          - Always capture and display the full error object ($_)
-          - Use -ErrorAction Stop for critical operations
-        - Output formatting:
-          - Keep error messages concise and clear
-          - Use Write-ColorOutput for consistent styling
-        - YAML handling:
-          - Use [System.IO.File]::WriteAllText() for YAML files to prevent BOM and encoding issues
-          - Validate YAML structure after string replacements
-          - Be cautious with variable expansion in YAML content
+research_questions:
+  description: When and how to ask research questions.
+  rules:
+    - id: WhenAsk
+      description: Ask when behavior unclear, unsure about implementation, complex libs, or before assumptions.
+      how_to: Ask questions when unsure of correct implementation approach, when encountering complex library interactions, or when encountering unexpected test failures. Do not make assumptions about system behavior.
+    - id: Format
+      description: Questions should be specific, focused, with code/test failures.
+      how_to: Questions should be specific, state the problem clearly, include code snippets or test failures, state what you have already tried and why you are asking the question.
 
-    cloud_run_guidelines:
-      description: Standards for Cloud Run deployments
-      secret_management:
-        - Secret reference format:
-          - Use 'name' field with simple secret names (e.g., "NEXTAUTH_SECRET")
-          - Avoid full project paths in secret names
-          - Only use alphanumeric characters, hyphens, or underscores
-        - Version handling:
-          - Use 'key' field instead of 'version'
-          - Prefer specific versions over "latest" for stability
-        - Project context:
-          - Cloud Run automatically finds secrets in same project
-          - No need to specify project paths
-        - Validation:
-          - Verify secret access before deployment
-          - Check secret reference format in YAML
-          - Test with specific versions before using "latest"
-        - Error handling:
-          - Log deployment errors with context
-          - Maintain zero-downtime during updates
-          - Preserve previous version as backup
-          - Clean up old images after verification
+code_review:
+    description: Rules for performing code reviews
+    rules:
+      - id: FeatureReview
+        description: Review features for alignment, duplicate functionality, API consistency, and test coverage.
+        how_to: Check for feature alignment with the product, duplicate functionality, API consistency, valid data structures, error handling, and test coverage during code review.
+      - id: ArchitectureReview
+        description: Review architecture fit, scalability, and security.
+        how_to: Check architectural fit, scalability, maintainability, security, component interactions, and documentation updates during code review.
 
-    modularity:
-      description: Guidelines for maintainable code structure
-      principles:
-        - Single responsibility per component
-        - Separation of concerns
-        - Modularity and testability
+workflow:
+  description: Development workflow steps.
+  steps:
+    - Write tests before implementation (TDD).
+    - Document decisions in a journal.
+    - Research solutions before implementation.
+    - Regular code reviews.
+    - Verify code matches BDD specifications.
+    - Remove hypothetical content during reviews.
+    - Update documentation to reflect state.
 
-    change_management:
-      description: Guidelines for making and documenting code changes
-      rules:
-        - Always explain changes clearly before implementing them
-        - List all files being modified and why
-        - Describe the purpose of each significant change
-        - Document any new dependencies or configuration requirements
-        - Explain how changes affect the initialization flow
-        - Test changes thoroughly before committing
-        - Update documentation to reflect changes
-        - When changing configuration or secrets:
-          - Document the source of each configuration value
-          - Explain how values are passed between components
-          - Verify changes in both development and production contexts
-        - When modifying deployment scripts:
-          - Test with all required credentials and configurations
-          - Verify changes in a clean environment
-          - Document any new environment requirements
+feature_verification:
+  description: Process for code-feature alignment.
+  steps:
+    - Review feature file scenarios and requirements.
+    - Locate corresponding code implementations.
+    - Compare behavior specifications with actual code.
+    - Run tests to verify feature coverage.
+    - Document gaps or inconsistencies.
+    - Remove hypothetical scenarios.
+    - Update implementation status.
 
+test_driven_development:
+  description: Guidelines for TDD practice.
+  test_case_coverage:
+    - Expected behavior and normal operations.
+    - Edge cases and boundary conditions.
+    - Error handling scenarios.
   workflow:
-    development_process:
-      - Write tests before implementation (TDD)
-      - Document decisions and progress in journal
-      - Research and validate solutions before implementation
-      - Regular code reviews and pair programming with users and external team members
-      - Verify code matches BDD feature specifications
+    - Write specific test cases with clear pass/fail criteria.
+    - Write tests before implementing functionality.
+    - Implement minimum code to make tests pass.
+    - Refactor while maintaining passing tests.
+    - Run full test suite on every code change.
+  documentation:
+    - Document test cases in test files.
 
-    feature_verification:
-      description: Process for ensuring code-feature alignment
-      steps:
-        - Review feature file scenarios and requirements
-        - Locate corresponding code implementations
-        - Compare behavior specifications with actual code
-        - Run tests to verify feature coverage
-        - Document any gaps or inconsistencies
-      frequency:
-        - Before submitting code changes
-        - During code reviews
-        - When updating feature files
-
-    test_driven_development:
-      description: Guidelines for TDD practice
-      test_case_coverage:
-        - Expected behavior and normal operations
-        - Edge cases and boundary conditions
-        - Error handling scenarios
-      workflow:
-        - Write specific test cases with clear pass/fail criteria
-        - Write tests before implementing functionality
-        - Implement minimum code to make tests pass
-        - Refactor while maintaining passing tests
-        - Run full test suite on every code change
-      documentation:
-        - Document test cases in test files
-
-    research_process:
-      description: System for tracking and resolving knowledge gaps
-      gap_identification:
-        scenario:
-          - Document exact code and commands involved
-          - Record observed vs expected behavior
-          - Note system state and conditions
-          - Identify recurring patterns
-          - Pause to wait for research questions to get answered by the external team
-      research_questions:
-        format:
-          - Clear problem statement
-          - Current knowledge and attempts
-          - Specific, precise questions
-          - Supporting evidence (code/errors)
-        tracking:
-          - Add to "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/research_questions.md"
-          - Categorize and tag appropriately
-      solution_handling:
-        - Share knowledge in documentation
-
-    documentation:
-      - Keep this index up to date
-      - Keep product feature files up to date
-      - Ensure feature files accurately reflect code implementation
-      - Document any temporary feature-code mismatches in research_questions.md
-      - Update features and code in sync to maintain consistency
-
-  security:
-    core_principles:
-      - Input validation and sanitization
-      - Regular dependency updates
+research_process:
+  description: System for tracking and resolving knowledge gaps.
+  gap_identification:
+    scenario:
+      - Document code, commands, and observed behavior.
+      - Note system state and conditions.
+      - Identify recurring patterns.
+  research_questions:
+    format:
+      - Clear problem statement.
+      - Current knowledge and attempts.
+      - Specific questions.
+      - Supporting code/errors.
+    tracking:
+      - Add to "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/research_questions.md".
+  solution_handling:
+    - Share solutions in documentation.

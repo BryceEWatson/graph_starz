@@ -13,7 +13,7 @@ export async function POST(request) {
     try {
         // Get the authenticated session
         const session = await getServerSession(authOptions);
-        if (!session?.user?.email) {
+        if (!session?.providerId) {
             log('No valid session found');
             return NextResponse.json(
                 { error: 'Unauthorized: No valid session found' },
@@ -94,7 +94,7 @@ export async function GET(_request) {
     try {
         // Get the authenticated session
         const session = await getServerSession(authOptions);
-        if (!session?.user?.email) {
+        if (!session?.providerId) {
             log('No valid session found');
             return NextResponse.json(
                 { error: 'Unauthorized: No valid session found' },

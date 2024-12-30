@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import UploadModal from './UploadModal';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 export default function UploadButton() {
+    const { data: _session } = useSession();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadStatus, setUploadStatus] = useState('');
@@ -38,6 +40,7 @@ export default function UploadButton() {
             const response = await fetch('/api/images/upload', {
                 method: 'POST',
                 body: formData,
+                credentials: 'include'
             });
 
             const result = await response.json();

@@ -10,13 +10,14 @@ const nextConfig = {
   productionBrowserSourceMaps: false,
   images: {
     formats: ['image/webp'],
-    dangerouslyAllowSVG: false,
+    dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
+    domains: ['lh3.googleusercontent.com'],
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'lh3.googleusercontent.com',
-        pathname: '/a/**',
+        pathname: '/**',
       },
       {
         protocol: 'https',
@@ -24,6 +25,9 @@ const nextConfig = {
         pathname: '/**',
       }
     ],
+    minimumCacheTTL: 60,
+    deviceSizes: [32, 48, 64, 96, 128, 256, 384],
+    imageSizes: [16, 32, 48, 64, 96],
   },
   // Ensure environment variables are loaded
   env: {
@@ -38,8 +42,7 @@ const nextConfig = {
     PROD_NEO4J_URI: process.env.PROD_NEO4J_URI,
     PROD_NEO4J_USER: process.env.PROD_NEO4J_USER,
     PROD_NEO4J_PASSWORD: process.env.PROD_NEO4J_PASSWORD,
-    GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME,
-    FRONTEND_URL: process.env.FRONTEND_URL
+    GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME
   }
 }
 

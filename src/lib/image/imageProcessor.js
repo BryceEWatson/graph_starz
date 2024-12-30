@@ -18,7 +18,7 @@ export async function imageToBase64(buffer) {
  * @param {string} options.contentType - Content type of the image
  * @returns {Promise<Object>} Processed image data
  */
-export async function processImage(input, { filename = 'image.webp', contentType = 'image/webp' } = {}) {
+export async function processImage(input, { _filename = 'image.webp', _contentType = 'image/webp' } = {}) {
   let imageBuffer;
   
   if (typeof input === 'string') {
@@ -45,33 +45,49 @@ export async function processImage(input, { filename = 'image.webp', contentType
 
   // Process image sizes
   const processedImages = await Promise.all([
+    // Thumbnail (100px width)
     sharp(imageBuffer)
-      .resize(100, 100, { fit: 'cover' })
+      .resize(100, null, { fit: 'inside', withoutEnlargement: true })
+      .webp()
+      .toBuffer(),
+    // Preview (400px width)
+    sharp(imageBuffer)
+      .resize(400, null, { fit: 'inside', withoutEnlargement: true })
+      .webp()
+      .toBuffer(),
+    // Full size (max 2048px width)
+    sharp(imageBuffer)
+      .resize(2048, null, { fit: 'inside', withoutEnlargement: true })
       .webp()
       .toBuffer()
-      .then(data => ({ size: 'thumbnail', data: data.toString('base64'), isBase64: true, width: 100, height: 100 })),
-    sharp(imageBuffer)
-      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-      .webp()
-      .toBuffer()
-      .then(async data => {
-        const resized = await sharp(data).metadata();
-        return { size: 'preview', data: data.toString('base64'), isBase64: true, width: resized.width, height: resized.height };
-      }),
-    sharp(imageBuffer)
-      .webp()
-      .toBuffer()
-      .then(data => ({ size: 'full', data: data.toString('base64'), isBase64: true, width, height }))
   ]);
+
+  const [thumbnailBuffer, previewBuffer, fullBuffer] = processedImages;
+
+  // Convert full size to base64 for AI analysis
+  const fullBase64 = `data:image/webp;base64,${fullBuffer.toString('base64')}`;
 
   return {
     pHash: pHashString,
-    filename,
-    contentType,
+    width,
+    height,
     images: {
-      thumbnail: processedImages[0],
-      preview: processedImages[1],
-      full: processedImages[2]
-    }
+      thumbnail: {
+        data: thumbnailBuffer,
+        width: 100,
+        height: Math.round(height * (100 / width))
+      },
+      preview: {
+        data: previewBuffer,
+        width: 400,
+        height: Math.round(height * (400 / width))
+      },
+      full: {
+        data: fullBase64,
+        width,
+        height
+      }
+    },
+    contentType: 'image/webp'
   };
 }

@@ -1,19 +1,14 @@
-'use client';
+'use client'
 
-import { SessionProvider } from 'next-auth/react';
-import dynamic from 'next/dynamic';
-
-const ThemeProvider = dynamic(
-  () => import('./ThemeProvider'),
-  { ssr: false }
-);
+import { SessionProvider } from 'next-auth/react'
+import ThemeProvider from './ThemeProvider'
 
 export default function Providers({ children }) {
   return (
-    <SessionProvider>
+    <SessionProvider basePath="/api/auth">
       <ThemeProvider>
         {children}
       </ThemeProvider>
     </SessionProvider>
-  );
+  )
 }

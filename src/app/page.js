@@ -3,86 +3,211 @@
 import { useState, useEffect } from 'react';
 import { useSession, signIn } from 'next-auth/react';
 import { GraphVisualization } from '../components/GraphVisualization';
-
-console.log('Loading Home component...');
+import { useTheme } from '@/components/ThemeProvider';
 
 export default function Home() {
-    console.log('Rendering Home component...');
-    const { data: session, status } = useSession();
+    const { data: session, status: authStatus } = useSession();
     const [error, setError] = useState(null);
-    const [loading, setLoading] = useState(false); 
+    const [isCheckingWhitelist, setIsCheckingWhitelist] = useState(false);
+    const [isLoadingGraph, setIsLoadingGraph] = useState(false);
     const [data, setData] = useState(null);
+    const [whitelistStatus, setWhitelistStatus] = useState(null);
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
 
+    // Debug logging
     useEffect(() => {
-        async function fetchData() {
-            try {
-                setLoading(true);
-                const response = await fetch('/api/graph');
-                if (!response.ok) {
-                    throw new Error('Failed to fetch graph data');
-                }
-                const graphData = await response.json();
-                setData(graphData);
-            } catch (err) {
-                console.error('Error fetching graph data:', err);
-                setError(err.message);
-            } finally {
-                setLoading(false);
-            }
+        console.log('Auth Debug:', {
+            authStatus,
+            session,
+            email: session?.user?.email,
+            whitelistStatus,
+            isCheckingWhitelist
+        });
+    }, [authStatus, session, whitelistStatus, isCheckingWhitelist]);
+
+    // Check whitelist status when user is authenticated
+    useEffect(() => {
+        console.log('Whitelist Effect Running:', {
+            authStatus,
+            hasEmail: Boolean(session?.user?.email)
+        });
+
+        if (authStatus === 'authenticated' && session?.user?.email) {
+            console.log('Checking whitelist for:', session.user.email);
+            setIsCheckingWhitelist(true);
+            fetch(`/api/auth/whitelist?email=${encodeURIComponent(session.user.email)}`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to check whitelist status');
+                    return res.json();
+                })
+                .then(data => {
+                    console.log('Whitelist response:', data);
+                    setWhitelistStatus(data.isWhitelisted);
+                    // Load graph data if whitelisted
+                    if (data.isWhitelisted === true) {
+                        setIsLoadingGraph(true);
+                        return fetch('/api/graph')
+                            .then(res => {
+                                if (!res.ok) {
+                                    if (res.status === 403) {
+                                        throw new Error('Early access not yet granted');
+                                    }
+                                    throw new Error('Failed to fetch graph data');
+                                }
+                                return res.json();
+                            })
+                            .then(graphData => setData(graphData));
+                    }
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                    setError(err.message);
+                })
+                .finally(() => {
+                    setIsCheckingWhitelist(false);
+                    setIsLoadingGraph(false);
+                });
+        } else if (authStatus === 'unauthenticated') {
+            console.log('Resetting states due to unauthenticated status');
+            // Reset states when user signs out
+            setWhitelistStatus(null);
+            setData(null);
+            setError(null);
         }
+    }, [authStatus, session]);
 
-        // Only fetch graph data if authenticated
-        if (status === 'authenticated' && session?.user) {
-            fetchData();
+    // Loading spinner component
+    const LoadingSpinner = () => (
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center">
+                <div className={`animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 ${isDark ? 'border-gray-200' : 'border-gray-900'} mx-auto`}></div>
+                <p className={`mt-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {isLoadingGraph ? 'Loading graph...' : 'Loading...'}
+                </p>
+            </div>
+        </div>
+    );
+
+    // Debug: Log before each render
+    console.log('Pre-render state:', {
+        authStatus,
+        isCheckingWhitelist,
+        whitelistStatus,
+        hasSession: Boolean(session)
+    });
+
+    // Show initial loading state
+    if (authStatus === 'loading') {
+        console.log('Rendering loading state');
+        return <LoadingSpinner />;
+    }
+
+    // Show loading while checking whitelist status
+    if (isCheckingWhitelist) {
+        console.log('Rendering whitelist check loading state');
+        return <LoadingSpinner />;
+    }
+
+    // Show graph for whitelisted users
+    if (whitelistStatus === true) {
+        console.log('Rendering graph view');
+        if (isLoadingGraph || !data) {
+            return <LoadingSpinner />;
         }
-    }, [status, session]);
-
-    // Show loading state only when authenticating
-    if (status === 'loading') {
-        return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+        return <GraphVisualization data={data} />;
     }
 
-    // Show sign in prompt when not authenticated
-    if (status === 'unauthenticated' || !session?.user) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
-                <h1 className="text-2xl font-bold">Welcome to Graph Starz</h1>
-                <p>Please sign in to continue</p>
-                <button
-                    onClick={() => signIn('google')}
-                    className="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600"
-                >
-                    Sign in with Google
-                </button>
-            </div>
-        );
-    }
-
-    // Show loading state while fetching graph data
-    if (loading) {
-        return <div className="flex items-center justify-center min-h-screen">Loading graph data...</div>;
-    }
-
-    // Show error state
-    if (error) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
-                <h1 className="text-2xl font-bold text-red-500">Error</h1>
-                <p>{error}</p>
-                <button
-                    onClick={() => window.location.reload()}
-                    className="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600"
-                >
-                    Retry
-                </button>
-            </div>
-        );
-    }
-
-    // Show graph visualization when data is loaded
+    // Show early access or sign in states
+    console.log('Rendering main UI with authStatus:', authStatus);
     return (
-        <div className="h-full pt-16">
-            <GraphVisualization data={data} />
+        <div className={`flex min-h-screen items-center justify-center ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+            <div className={`max-w-md w-full space-y-8 p-8 rounded-xl shadow-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+                {!(authStatus === 'authenticated' && session?.user?.email) ? (
+                    // Not signed in
+                    <>
+                        <h2 className={`text-3xl font-bold text-center ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            Welcome to Graph Starz
+                        </h2>
+                        <p className={`mt-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                            Sign in to request early access or view your graph
+                        </p>
+                        <div className="mt-6">
+                            <button
+                                onClick={() => signIn('google')}
+                                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            >
+                                Sign in with Google
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    // Signed in but not whitelisted
+                    <>
+                        <h2 className={`text-3xl font-bold text-center ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            Early Access Coming Soon
+                        </h2>
+                        <p className={`mt-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                            Graph Starz is currently in early access. We are excited to have you join us!
+                        </p>
+                        
+                        <div className={`mt-6 border rounded-md p-4 ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                            <h3 className={`text-lg font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                {whitelistStatus === false ? 'Access Requested' : 'Request Early Access'}
+                            </h3>
+                            <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                                {whitelistStatus === false 
+                                    ? 'Your request is pending review. We will notify you when access is granted.'
+                                    : 'Click below to request early access to Graph Starz.'}
+                            </p>
+                            {whitelistStatus === null && (
+                                <button
+                                    onClick={() => {
+                                        // Don't proceed if no session or email
+                                        if (!session?.user?.email) {
+                                            console.error('No valid session or email');
+                                            setError('Please sign in again');
+                                            return;
+                                        }
+
+                                        setIsCheckingWhitelist(true);
+                                        fetch('/api/auth/whitelist', {
+                                            method: 'POST',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify({ email: session.user.email }),
+                                        })
+                                        .then(res => {
+                                            if (!res.ok) throw new Error('Failed to request access');
+                                            return res.json();
+                                        })
+                                        .then(() => setWhitelistStatus(false))
+                                        .catch(err => {
+                                            console.error('Error:', err);
+                                            setError(err.message);
+                                        })
+                                        .finally(() => setIsCheckingWhitelist(false));
+                                    }}
+                                    disabled={isCheckingWhitelist || !session?.user?.email}
+                                    className={`mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white 
+                                        ${(isCheckingWhitelist || !session?.user?.email)
+                                            ? 'bg-indigo-400 cursor-not-allowed' 
+                                            : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
+                                        }`}
+                                >
+                                    {isCheckingWhitelist ? 'Requesting...' : 'Request Early Access'}
+                                </button>
+                            )}
+                            {error && (
+                                <p className={`mt-2 text-sm text-red-${isDark ? '400' : '600'}`}>
+                                    {error}
+                                </p>
+                            )}
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
     );
 }

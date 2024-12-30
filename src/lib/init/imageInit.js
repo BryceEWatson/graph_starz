@@ -3,43 +3,62 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import debug from 'debug';
-import { analyzeImage } from '../image/imageAnalyzer';
-import { saveImageData } from '../neo4j/imageRepository';
-import { processImage } from '../image/imageProcessor';
-import { findSimilarImage } from '../neo4j/imageRepository';
+import { _saveImageData, clearTestImages } from '../neo4j/imageRepository';
+import { POST } from '../../app/api/images/upload/route';
+import { initializeStorage } from '../storage/gcs';
 
 const log = debug('app:init:images');
 
 // Use path.join for cross-platform compatibility
 const TEST_IMAGES_DIR = path.join(process.cwd(), 'test_images');
 
+// Fixed IDs for test images
+const TEST_IMAGE_IDS = ['test-image-1', 'test-image-2'];
+
+// Clear test data from previous runs
+async function clearTestData() {
+  log('Clearing existing test images...');
+
+  try {
+    // 1. Clear test images from Neo4j
+    const testImageIds = TEST_IMAGE_IDS;
+    await clearTestImages(testImageIds);
+    log('Test images cleared from Neo4j successfully');
+
+    // 2. Clear test files from GCS
+    const { bucket } = await initializeStorage();
+    const [files] = await bucket.getFiles();
+    
+    // Filter for test files (both full size and thumbnails)
+    const testFiles = files.filter(file => {
+      const filename = file.name;
+      return testImageIds.some(id => filename.includes(id));
+    });
+
+    // Delete test files from storage
+    if (testFiles.length > 0) {
+      await Promise.all(testFiles.map(file => file.delete()));
+      log(`Cleared ${testFiles.length} test files from GCS`);
+    }
+
+    log('Test data cleared successfully');
+  } catch (error) {
+    log('Error clearing test data:', error);
+    throw error;
+  }
+}
+
 /**
  * Initialize test images by uploading them through the standard upload flow
  * @param {string} testUserId - ID of the test user to use for uploads
  */
 export async function initializeImages(testUserId) {
-  log('Starting image initialization check...');
-  
-  if (!testUserId) {
-    console.log('[IMAGE-INIT] No test user ID provided');
-    const error = new Error('testUserId is required for image initialization');
-    const errorDetails = {
-      error: error.message,
-      testUserId: testUserId,
-      type: typeof testUserId
-    };
-    log('Initialization failed: %O', errorDetails);
-    console.log('[IMAGE-INIT] Initialization failed:', errorDetails);
-    return {
-      success: false,
-      processed: 0,
-      skipped: 0,
-      errors: 1,
-      error: error.message || JSON.stringify(error) || 'Unknown error occurred'
-    };
-  }
-
   try {
+    log('Starting image initialization check...');
+    
+    // Clear existing test data first
+    await clearTestData();
+
     // Log initial state
     const initialState = {
       testUserId: testUserId,
@@ -150,9 +169,17 @@ export async function initializeImages(testUserId) {
     let successCount = 0;
     let skipCount = 0;
     let errorCount = 0;
+    let currentTestImageIndex = 0;
 
     for (const file of files) {
       try {
+        // Skip if we've used all test image IDs
+        if (currentTestImageIndex >= TEST_IMAGE_IDS.length) {
+          log('Skipping additional image %s - no more test IDs available', file);
+          skipCount++;
+          continue;
+        }
+
         const imagePath = path.join(TEST_IMAGES_DIR, file);
         log('Processing image: %s', file);
         console.log('[IMAGE-INIT] Starting processing for:', file);
@@ -175,93 +202,45 @@ export async function initializeImages(testUserId) {
           console.error('[IMAGE-INIT] Failed to read image file:', file, 'Error:', readError);
           throw readError;
         }
-        
-        // Process the image directly
-        log('Processing image directly: %s', file);
-        console.log('[IMAGE-INIT] Starting image processing for:', file);
-        
-        // Get content type
+
+        // Create FormData for upload
         const contentType = path.extname(file).toLowerCase() === '.png' ? 'image/png' :
-                          path.extname(file).toLowerCase() === '.webp' ? 'image/webp' :
-                          'image/jpeg';
-        
-        // Process and analyze the image
-        console.log('[IMAGE-INIT] Processing image:', file, 'with content type:', contentType);
-        let processedData;
-        try {
-          processedData = await processImage(imageBuffer, {
-            filename: file.replace(/[^a-zA-Z0-9-_\.]|\.(?!(jpg|jpeg|png|webp)$)/gi, '_'),
-            contentType
-          });
-          console.log('[IMAGE-INIT] Image processed successfully:', {
-            filename: processedData.filename,
-            contentType: processedData.contentType,
-            pHash: processedData.pHash,
-            metadata: processedData.metadata
-          });
-        } catch (processError) {
-          console.error('[IMAGE-INIT] Failed to process image:', file, 'Error:', processError);
-          throw processError;
-        }
+          path.extname(file).toLowerCase() === '.jpg' || path.extname(file).toLowerCase() === '.jpeg' ? 'image/jpeg' :
+            'image/webp';
+            
+        const fileBlob = new Blob([imageBuffer], { type: contentType });
+        const uploadFile = new File([fileBlob], file, { type: contentType });
 
-        // Check for duplicates using the pHash from processedData
-        console.log('[IMAGE-INIT] Checking for duplicates with pHash:', processedData.pHash);
-        let existingImage;
-        try {
-          existingImage = await findSimilarImage(processedData.pHash);
-          console.log('[IMAGE-INIT] Duplicate check result:', existingImage ? 'Found duplicate' : 'No duplicate found');
-        } catch (dupError) {
-          console.error('[IMAGE-INIT] Failed to check for duplicates:', file, 'Error:', dupError);
-          throw dupError;
-        }
+        // Create FormData
+        const formData = new FormData();
+        formData.append('file', uploadFile);
+        formData.append('id', TEST_IMAGE_IDS[currentTestImageIndex]);
 
-        // Get MIME type based on file extension
-        const mimeType = path.extname(file).toLowerCase() === '.png' ? 'image/png' :
-                        path.extname(file).toLowerCase() === '.webp' ? 'image/webp' :
-                        'image/jpeg';
-        
-        console.log('[IMAGE-INIT] Analyzing image with MIME type:', mimeType);
-        let analysisData;
-        try {
-          analysisData = await analyzeImage(imageBuffer, mimeType);
-          console.log('[IMAGE-INIT] Analysis complete:', analysisData);
-        } catch (analysisError) {
-          console.error('[IMAGE-INIT] Failed to analyze image:', file, 'Error:', analysisError);
-          throw analysisError;
-        }
-        
-        // Save to database with correct parameter order
-        console.log('[IMAGE-INIT] Saving image data to database...', {
-          processedData: {
-            filename: processedData.filename,
-            contentType: processedData.contentType,
-            pHash: processedData.pHash
-          },
-          analysisData: {
-            title: analysisData.title,
-            description: analysisData.description
-          },
-          testUserId
+        // Create mock request with test user header
+        const mockRequest = new Request('http://localhost:3000/api/images/upload', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-Test-User': testUserId
+          }
         });
-        
-        let savedImage;
-        try {
-          savedImage = await saveImageData(processedData, analysisData, testUserId);
-          console.log('[IMAGE-INIT] Image saved successfully. ID:', savedImage?.id);
-        } catch (saveError) {
-          console.error('[IMAGE-INIT] Failed to save image:', file, 'Error:', saveError);
-          throw saveError;
+
+        // Call the upload route directly
+        const response = await POST(mockRequest);
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('[IMAGE-INIT] Upload failed:', error);
+          throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
         }
 
-        if (!savedImage?.id) {
-          const error = new Error('Failed to save image data - no ID returned');
-          console.error('[IMAGE-INIT] Save failed:', error);
-          throw error;
-        }
+        const result = await response.json();
+        console.log('[IMAGE-INIT] Upload successful:', result);
 
+        // Move to next image
         log('Successfully processed: %s', file);
         console.log('[IMAGE-INIT] Successfully processed:', file);
         successCount++;
+        currentTestImageIndex++;
       } catch (error) {
         log('Error processing %s: %O', file, error);
         console.log('[IMAGE-INIT] Error processing:', file, error);
@@ -281,8 +260,8 @@ export async function initializeImages(testUserId) {
     };
 
   } catch (error) {
-    log('Image initialization failed: %O', error);
-    console.log('[IMAGE-INIT] Image initialization failed:', error);
+    log('Error initializing images: %O', error);
+    console.error('[IMAGE-INIT] Error initializing images:', error);
     return {
       success: false,
       processed: 0,

@@ -15,7 +15,7 @@
     "db:init:clear": "cross-env DEBUG=db:init:* FORCE_RESET=true CLEAR_DATA=true node src/lib/neo4j/init-db.js",
     "db:init:prod": "cross-env GOOGLE_APPLICATION_CREDENTIALS=./gcs-credentials.json NODE_ENV=production DEBUG=db:init:* node src/lib/neo4j/init-db.js",
     "db:init:prod:force": "cross-env GOOGLE_APPLICATION_CREDENTIALS=./gcs-credentials.json NODE_ENV=production FORCE_RESET=true DEBUG=db:init:* node src/lib/neo4j/init-db.js",
-    "db:init:prod:clear": "cross-env FORCE_RESET=\"true\" CLEAR_DATA=\"true\" NODE_ENV=\"production\" GOOGLE_APPLICATION_CREDENTIALS=\"./gcs-credentials.json\" DEBUG=\"db:init:*\" node src/lib/neo4j/init-db.js",
+    "db:init:prod:clear": "cross-env FORCE_RESET=\"true\" CLEAR_DATA=\"true\" NODE_ENV=\"production\" DEBUG=\"db:init:*\" node src/lib/neo4j/init-db.js",
     "test": "jest --colors=false --verbose=false --silent | node scripts/clean-output.js",
     "test:watch": "jest --watch --colors=false --verbose=false --silent",
     "test:coverage": "jest --coverage --colors=false --verbose=false --silent --coverageReporters='text-summary'",
@@ -39,6 +39,7 @@
     "node-fetch": "^3.3.2",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
+    "react-error-boundary": "^5.0.0",
     "sharp": "^0.33.2",
     "sharp-phash": "^2.2.0"
   },

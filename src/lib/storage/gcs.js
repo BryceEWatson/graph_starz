@@ -16,7 +16,7 @@ let bucket = null;
  * Initialize the Storage client if not already initialized
  * @returns {Promise<{storage: Storage, bucket: any}>}
  */
-async function initializeStorage() {
+export async function initializeStorage() {
   if (storage && bucket) {
     return { storage, bucket };
   }
@@ -70,7 +70,7 @@ async function updateHashPrefixCache() {
       hashPrefixCache.get(prefix).push({
         hash,
         name: file.name,
-        url: `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(file.name)}`
+        url: `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(file.name)}?alt=media`
       });
     }
   }));

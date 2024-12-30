@@ -123,3 +123,10 @@ Then read the @gcsInit.js file to see how we are handling the GCS initialization
 Finally, brainstorm how we can fix the GCS initialization error in production and proceed with the best possible solution.
 
 As per the developer rules, please ask any research questions you think may help before we continue, if you have any.
+
+
+# Task: Fix Service Unavailable after production deployment
+
+## Background
+
+After deploying our application to production using the @production_deploy_cloud_run.ps1 script, we see that the page load fails with a 503 "Service Unavailable" error. We need to fix this to ensure our application is accessible to users.

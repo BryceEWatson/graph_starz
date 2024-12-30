@@ -1,17 +1,26 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-console.log('Script starting - Environment:', {
+const neo4j = require('neo4j-driver');
+const debug = require('debug');
+const path = require('path');
+const dotenv = require('dotenv');
+const fs = require('fs');
+
+const log = debug('db:init:main');
+const errorLog = debug('db:init:error');
+
+log('Script starting - Environment:', {
     NODE_ENV: process.env.NODE_ENV,
     FORCE_RESET: process.env.FORCE_RESET,
     CLEAR_DATA: process.env.CLEAR_DATA,
     DEBUG: process.env.DEBUG
 });
 
-const neo4j = require('neo4j-driver');
-const debug = require('debug');
-const { validateSecrets } = require('../../../scripts/validate-secrets');
-
-const log = debug('db:init:main');
-const errorLog = debug('db:init:error');
+// Load environment variables from .env file in development
+if (process.env.NODE_ENV !== 'production') {
+    const envPath = path.join(process.cwd(), '.env');
+    log('Loading environment from:', envPath);
+    dotenv.config({ path: envPath });
+}
 
 async function validateSetup(session) {
     log('DEBUG - Starting validateSetup...');
@@ -66,6 +75,75 @@ async function validateSetup(session) {
     log('DEBUG - Database setup validation successful');
 }
 
+async function getSecrets(environment) {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    const requiredSecrets = [
+        'NEO4J_URI',
+        'NEO4J_USER',
+        'NEO4J_PASSWORD',
+        'GOOGLE_APPLICATION_CREDENTIALS'
+    ];
+
+    if (environment === 'production') {
+        // In production, get secrets from Secret Manager
+        log('Getting secrets from Google Cloud Secret Manager');
+        try {
+            // First, verify all secrets exist
+            const { stdout } = await execAsync('gcloud secrets list --format="value(name)"');
+            const availableSecrets = stdout.split('\n').map(s => s.trim());
+            const missingSecrets = requiredSecrets.filter(secret => !availableSecrets.includes(secret));
+
+            if (missingSecrets.length > 0) {
+                throw new Error(`Missing required secrets in Secret Manager: ${missingSecrets.join(', ')}`);
+            }
+
+            // Get all secrets
+            const secrets = {};
+            for (const secretName of requiredSecrets) {
+                const { stdout: value } = await execAsync(`gcloud secrets versions access latest --secret=${secretName}`);
+                secrets[secretName] = value.trim();
+            }
+
+            // Parse and validate GCS credentials
+            try {
+                const gcsCredentials = JSON.parse(secrets.GOOGLE_APPLICATION_CREDENTIALS);
+                if (!gcsCredentials.type || !gcsCredentials.project_id) {
+                    throw new Error('Invalid GCS credentials format');
+                }
+                // Store parsed credentials for use
+                secrets.GOOGLE_APPLICATION_CREDENTIALS = gcsCredentials;
+            } catch (error) {
+                throw new Error(`Failed to parse GCS credentials: ${error.message}`);
+            }
+
+            return secrets;
+        } catch (error) {
+            throw new Error(`Failed to get secrets from Secret Manager: ${error.message}`);
+        }
+    } else {
+        // In development, use environment variables and local file
+        try {
+            const secrets = {
+                NEO4J_URI: process.env.NEO4J_URI,
+                NEO4J_USER: process.env.NEO4J_USER,
+                NEO4J_PASSWORD: process.env.NEO4J_PASSWORD
+            };
+
+            // Read GCS credentials from local file
+            const credentialsPath = path.join(process.cwd(), 'gcs-credentials.json');
+            const gcsCredentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+            secrets.GOOGLE_APPLICATION_CREDENTIALS = gcsCredentials;
+
+            return secrets;
+        } catch (error) {
+            throw new Error(`Failed to get development secrets: ${error.message}`);
+        }
+    }
+}
+
 async function initializeDb() {
     let session;
     let driver;
@@ -78,14 +156,18 @@ async function initializeDb() {
         log('DEBUG - CLEAR_DATA:', process.env.CLEAR_DATA);
         
         const environment = process.env.NODE_ENV === 'production' ? 'production' : 'development';
-        const requiredSecrets = ['NEO4J_URI', 'NEO4J_USER', 'NEO4J_PASSWORD'];
         
-        // Validate and get secrets
-        const { values: secrets } = await validateSecrets(environment, requiredSecrets);
+        // Get all secrets including GCS credentials
+        const secrets = await getSecrets(environment);
+        
+        // Set GCS credentials in environment as JSON string
+        process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON = JSON.stringify(secrets.GOOGLE_APPLICATION_CREDENTIALS);
+        
+        if (!secrets.NEO4J_URI || !secrets.NEO4J_USER || !secrets.NEO4J_PASSWORD) {
+            throw new Error('Missing required Neo4j credentials');
+        }
         
         log('DEBUG - NEO4J_URI before driver creation:', secrets.NEO4J_URI);
-        log('DEBUG - Expected NEO4J_URI:', 'neo4j+s://aceae2f4.databases.neo4j.io');
-        log('DEBUG - URIs match:', secrets.NEO4J_URI === 'neo4j+s://aceae2f4.databases.neo4j.io');
         
         // Create Neo4j driver instance
         driver = neo4j.driver(
@@ -191,6 +273,20 @@ async function initializeDb() {
             FOR (i:Image) ON (i.createdAt)
         `);
 
+        // Create test user if it doesn't exist
+        log('DEBUG - Creating test user...');
+        await session.run(`
+            MERGE (u:User {id: 'test-user-1'})
+            ON CREATE SET
+                u.email = 'test@example.com',
+                u.name = 'Test User',
+                u.createdAt = datetime(),
+                u.lastLogin = datetime()
+            ON MATCH SET
+                u.lastLogin = datetime()
+        `);
+        log('DEBUG - Test user created/updated');
+
         // Validate the setup
         await validateSetup(session);
         
@@ -212,11 +308,11 @@ async function initializeDb() {
 if (require.main === module) {
     initializeDb()
         .then(() => {
-            log('Database initialization process completed');
+            console.log('Database initialization completed successfully');
             process.exit(0);
         })
         .catch(error => {
-            errorLog('Failed to initialize database:', error);
+            console.error('Failed to initialize database:', error);
             process.exit(1);
         });
 }

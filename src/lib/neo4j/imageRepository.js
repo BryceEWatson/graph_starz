@@ -1,6 +1,11 @@
 'use server';
 
 import { getDriver } from './client.js';
+import { randomUUID } from 'crypto';
+import debug from 'debug';
+import neo4j from 'neo4j-driver';
+
+const log = debug('app:neo4j:image');
 
 function normalizeAttribute(attr) {
   if (!attr || typeof attr !== 'string') {
@@ -10,177 +15,234 @@ function normalizeAttribute(attr) {
   return attr.toLowerCase().trim();
 }
 
-export async function saveImageData(imageData, analysis, userId) {
-  if (!userId) {
-    throw new Error('userId is required');
-  }
-  if (!imageData) {
-    throw new Error('imageData is required');
-  }
-  if (!analysis) {
-    throw new Error('analysis is required');
-  }
+/**
+ * Clear test images from the database
+ * @param {string[]} testImageIds - Array of test image IDs to clear
+ * @returns {Promise<number>} Number of images cleared
+ */
+export async function clearTestImages(testImageIds) {
+  const log = debug('app:neo4j:image');
+  
+  try {
+    log('Clearing test images with IDs:', testImageIds);
+    const driver = await getDriver();
+    const session = driver.session();
 
-  console.log('Saving image data to Neo4j...');
-  console.log('User ID:', userId);
-  console.log('Image data:', JSON.stringify({
-    filename: imageData.filename,
-    contentType: imageData.contentType,
-    pHash: imageData.pHash
-  }, null, 2));
-  console.log('Analysis:', JSON.stringify(analysis, null, 2));
-  console.log('Title from analysis:', analysis.title);
+    // Delete all test images and their relationships
+    const result = await session.executeWrite(tx => tx.run(`
+      MATCH (i:Image)
+      WHERE i.id IN $testImageIds
+      OPTIONAL MATCH (i)-[r]-()
+      DELETE r, i
+      RETURN count(i) as cleared
+    `, { testImageIds }));
+
+    // Convert Neo4j Integer to JavaScript number
+    const cleared = neo4j.integer.toNumber(result.records[0].get('cleared'));
+    log(`Cleared ${cleared} test images`);
+    
+    await session.close();
+    return cleared;
+  } catch (error) {
+    log('Error clearing test images:', error);
+    throw error;
+  }
+}
+
+/**
+ * Save image data to Neo4j
+ * @param {Object} imageData - Processed image data (url, thumbnailUrl, width, height, pHash)
+ * @param {Object} analysis - Image analysis results (title, description, objects, colors, styles)
+ * @param {string} userId - ID of the user uploading the image
+ * @param {string} [fixedId] - Optional fixed ID for test images
+ * @returns {Promise<{id: string, isDuplicate?: boolean}>}
+ */
+export async function saveImageData(imageData, analysis, userId, fixedId = null) {
+  if (!userId) {
+    const error = new Error('User ID is required');
+    log('Failed to save image: %O', {
+      error: error.message,
+      code: 'MISSING_USER_ID',
+      userId
+    });
+    throw error;
+  }
 
   const driver = await getDriver();
   const session = driver.session();
 
   try {
-    // First transaction: Create index if it doesn't exist
-    console.log('Creating index if not exists...');
-    await session.executeWrite(async (tx) => {
-      await tx.run(`
-        CREATE INDEX image_phash_idx IF NOT EXISTS
-        FOR (i:Image) ON (i.pHash)
-      `);
+    // Generate a unique ID for the image
+    const imageId = fixedId || randomUUID();
+    log('Starting image save operation: %O', {
+      imageId,
+      userId,
+      isTestImage: !!fixedId,
+      contentType: imageData.contentType
     });
 
-    // Second transaction: Check for duplicates and save image data
-    console.log('Checking for duplicates and saving image data...');
-    const result = await session.executeWrite(async (tx) => {
-      // Check for similar images using database-level comparison
-      console.log('Checking for similar images with pHash:', imageData.pHash);
-      const similarImage = await tx.run(`
-        MATCH (i:Image)
-        WHERE i.pHash IS NOT NULL
-        AND i.pHash = $pHash
-        RETURN i.id as id
-      `, { pHash: imageData.pHash });
-
-      if (similarImage.records.length > 0) {
-        console.log('Found similar image:', similarImage.records[0].get('id'));
-        return { id: similarImage.records[0].get('id'), isDuplicate: true };
+    // Check for duplicate if not a test image
+    if (!fixedId && imageData.pHash) {
+      const duplicate = await findSimilarImage(imageData.pHash);
+      if (duplicate) {
+        log('Duplicate image detected: %O', {
+          originalId: duplicate,
+          pHash: imageData.pHash,
+          newImageId: imageId
+        });
+        return { id: duplicate, isDuplicate: true };
       }
+    }
 
-      // Create image node
-      console.log('Creating image node...');
-      const imageResult = await tx.run(`
-        CREATE (i:Image {
-          id: randomUUID(),
-          title: $title,
-          description: $description,
-          pHash: $pHash,
-          filename: $filename,
-          contentType: $contentType,
-          createdAt: datetime(),
-          updatedAt: datetime()
-        })
-        RETURN i.id as id
-      `, {
-        title: analysis.title,
-        description: analysis.description,
-        pHash: imageData.pHash,
-        filename: imageData.filename,
-        contentType: imageData.contentType
+    // Create the image with its properties
+    const result = await session.executeWrite(async (tx) => {
+      log('Creating image node with properties: %O', {
+        imageId,
+        userId,
+        url: imageData.url,
+        thumbnailUrl: imageData.thumbnailUrl,
+        width: imageData.width,
+        height: imageData.height
       });
 
-      const imageId = imageResult.records[0].get('id');
-      console.log('Created image node:', imageId);
-
-      // Create relationships for all attributes
-      console.log('Creating attribute relationships...');
-      
-      // Create style relationships
-      for (const style of analysis.style || []) {
-        const normalizedStyle = normalizeAttribute(style);
-        if (normalizedStyle) {
-          await tx.run(`
-            MERGE (s:Style {name: $style})
-            WITH s
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:HAS_STYLE]->(s)
-          `, { style: normalizedStyle, imageId });
-        }
-      }
-
-      // Create technique relationships
-      for (const technique of analysis.technique || []) {
-        const normalizedTechnique = normalizeAttribute(technique);
-        if (normalizedTechnique) {
-          await tx.run(`
-            MERGE (t:Technique {name: $technique})
-            WITH t
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:USES_TECHNIQUE]->(t)
-          `, { technique: normalizedTechnique, imageId });
-        }
-      }
-
-      // Create mood relationships
-      for (const mood of analysis.mood || []) {
-        const normalizedMood = normalizeAttribute(mood);
-        if (normalizedMood) {
-          await tx.run(`
-            MERGE (m:Mood {name: $mood})
-            WITH m
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:HAS_MOOD]->(m)
-          `, { mood: normalizedMood, imageId });
-        }
-      }
-
-      // Create color relationships
-      for (const color of analysis.dominantColors || []) {
-        const normalizedColor = normalizeAttribute(color);
-        if (normalizedColor) {
-          await tx.run(`
-            MERGE (c:Color {name: $color})
-            WITH c
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:HAS_COLOR]->(c)
-          `, { color: normalizedColor, imageId });
-        }
-      }
-
-      // Create object relationships
-      for (const object of analysis.objects || []) {
-        const normalizedObject = normalizeAttribute(object);
-        if (normalizedObject) {
-          await tx.run(`
-            MERGE (o:Object {name: $object})
-            WITH o
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:CONTAINS_OBJECT]->(o)
-          `, { object: normalizedObject, imageId });
-        }
-      }
-
-      // Create composition relationships
-      for (const composition of analysis.composition || []) {
-        const normalizedComposition = normalizeAttribute(composition);
-        if (normalizedComposition) {
-          await tx.run(`
-            MERGE (c:Composition {name: $composition})
-            WITH c
-            MATCH (i:Image {id: $imageId})
-            MERGE (i)-[:USES_COMPOSITION]->(c)
-          `, { composition: normalizedComposition, imageId });
-        }
-      }
-
-      // Create user relationship
-      console.log('Creating user relationship...');
-      await tx.run(`
-        MATCH (i:Image {id: $imageId})
+      // First verify the user exists
+      const userCheck = await tx.run(`
         MATCH (u:User {id: $userId})
-        MERGE (u)-[:UPLOADED]->(i)
-      `, { imageId, userId });
+        RETURN u
+      `, { userId });
 
-      return { id: imageId, isDuplicate: false };
+      if (!userCheck.records[0]) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+
+      // Create the image
+      const imageResult = await tx.run(`
+        MATCH (u:User {id: $userId})
+        CREATE (i:Image {
+          id: $imageId,
+          name: $name,
+          description: $description,
+          url: $url,
+          thumbnailUrl: $thumbnailUrl,
+          pHash: $pHash,
+          width: toInteger($width),
+          height: toInteger($height),
+          createdAt: datetime(),
+          userId: $userId
+        })
+        CREATE (u)-[:UPLOADED]->(i)
+        RETURN i
+      `, {
+        imageId,
+        userId,
+        name: imageData.name || '',
+        description: imageData.description || '',
+        url: imageData.url,
+        thumbnailUrl: imageData.thumbnailUrl,
+        pHash: imageData.pHash || null,
+        width: imageData.width,
+        height: imageData.height
+      });
+
+      if (!imageResult.records[0]) {
+        log('Failed to create image node. Query result: %O', imageResult);
+        throw new Error('Failed to create image node - no records returned');
+      }
+
+      // Create relationships for colors
+      if (analysis.colors && analysis.colors.length > 0) {
+        log('Creating color relationships: %O', analysis.colors);
+        try {
+          for (const color of analysis.colors) {
+            const normalizedColor = normalizeAttribute(color);
+            if (!normalizedColor) continue;
+
+            await tx.run(`
+              MERGE (c:Color {name: $color})
+              WITH c
+              MATCH (i:Image {id: $imageId})
+              CREATE (i)-[:HAS_COLOR]->(c)
+            `, { color: normalizedColor, imageId });
+          }
+        } catch (error) {
+          log('Failed to create color relationships: %O', {
+            error: error.message,
+            code: error.code,
+            colors: analysis.colors,
+            imageId
+          });
+          throw error;
+        }
+      }
+
+      // Create relationships for objects
+      if (analysis.objects && analysis.objects.length > 0) {
+        log('Creating object relationships: %O', analysis.objects);
+        try {
+          for (const object of analysis.objects) {
+            const normalizedObject = normalizeAttribute(object);
+            if (!normalizedObject) continue;
+
+            await tx.run(`
+              MERGE (o:Object {name: $object})
+              WITH o
+              MATCH (i:Image {id: $imageId})
+              CREATE (i)-[:CONTAINS]->(o)
+            `, { object: normalizedObject, imageId });
+          }
+        } catch (error) {
+          log('Failed to create object relationships: %O', {
+            error: error.message,
+            code: error.code,
+            objects: analysis.objects,
+            imageId
+          });
+          throw error;
+        }
+      }
+
+      // Create relationships for styles
+      if (analysis.styles && analysis.styles.length > 0) {
+        log('Creating style relationships: %O', analysis.styles);
+        try {
+          for (const style of analysis.styles) {
+            const normalizedStyle = normalizeAttribute(style);
+            if (!normalizedStyle) continue;
+
+            await tx.run(`
+              MERGE (s:Style {name: $style})
+              WITH s
+              MATCH (i:Image {id: $imageId})
+              CREATE (i)-[:HAS_STYLE]->(s)
+            `, { style: normalizedStyle, imageId });
+          }
+        } catch (error) {
+          log('Failed to create style relationships: %O', {
+            error: error.message,
+            code: error.code,
+            styles: analysis.styles,
+            imageId
+          });
+          throw error;
+        }
+      }
+
+      return imageResult;
     });
 
-    return result;
+    if (!result.records[0]) {
+      throw new Error('Failed to create image - transaction succeeded but no records returned');
+    }
+
+    log('Successfully saved image: %s', imageId);
+    return { id: imageId };
   } catch (error) {
-    console.error('Error saving image data:', error);
+    log('Error saving image: %O', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      imageId: fixedId || 'new'
+    });
     throw error;
   } finally {
     await session.close();
@@ -188,7 +250,48 @@ export async function saveImageData(imageData, analysis, userId) {
 }
 
 /**
- * Check if a similar image exists based on perceptual hash
+ * Ensure user exists in Neo4j database
+ * @param {string} email - User's email address
+ * @param {string} name - User's display name
+ * @param {string} providerId - OAuth provider's user ID
+ * @returns {Promise<void>}
+ */
+export async function ensureUserExists(email, name, providerId) {
+  const log = debug('app:neo4j:user');
+  log('Ensuring user exists:', { email, name, providerId });
+  
+  const driver = await getDriver();
+  const session = driver.session();
+  
+  try {
+    await session.executeWrite(async (tx) => {
+      const result = await tx.run(`
+        MERGE (u:User {id: $providerId})
+        ON CREATE SET
+          u.email = $email,
+          u.name = $name,
+          u.createdAt = datetime(),
+          u.lastLogin = datetime()
+        ON MATCH SET
+          u.email = $email,
+          u.name = $name,
+          u.lastLogin = datetime()
+        RETURN u
+      `, { email, name, providerId });
+      
+      const user = result.records[0]?.get('u')?.properties;
+      log('User created/updated:', user);
+    });
+  } catch (error) {
+    log('Error ensuring user exists:', error);
+    throw error;
+  } finally {
+    await session.close();
+  }
+}
+
+/**
+ * Find similar image based on perceptual hash
  * @param {string} pHash - Perceptual hash to check
  * @returns {Promise<string|null>} Image ID if similar image exists, null otherwise
  */
@@ -198,99 +301,56 @@ export async function findSimilarImage(pHash) {
 
   try {
     const result = await session.executeRead(async (tx) => {
-      // Use index and database-level comparison
-      const response = await tx.run(`
+      return await tx.run(`
         MATCH (i:Image)
-        WHERE i.pHash IS NOT NULL 
-        WITH i, $pHash as targetHash,
-          // Convert hex strings to binary strings
-          reduce(acc="", h1 IN split(i.pHash, "") | 
-            acc + CASE h1
-              WHEN "0" THEN "0000" WHEN "1" THEN "0001" WHEN "2" THEN "0010" WHEN "3" THEN "0011"
-              WHEN "4" THEN "0100" WHEN "5" THEN "0101" WHEN "6" THEN "0110" WHEN "7" THEN "0111"
-              WHEN "8" THEN "1000" WHEN "9" THEN "1001" WHEN "a" THEN "1010" WHEN "b" THEN "1011"
-              WHEN "c" THEN "1100" WHEN "d" THEN "1101" WHEN "e" THEN "1110" WHEN "f" THEN "1111"
-              ELSE "0000" END) as hash1Bin,
-          reduce(acc="", h2 IN split($pHash, "") | 
-            acc + CASE h2
-              WHEN "0" THEN "0000" WHEN "1" THEN "0001" WHEN "2" THEN "0010" WHEN "3" THEN "0011"
-              WHEN "4" THEN "0100" WHEN "5" THEN "0101" WHEN "6" THEN "0110" WHEN "7" THEN "0111"
-              WHEN "8" THEN "1000" WHEN "9" THEN "1001" WHEN "a" THEN "1010" WHEN "b" THEN "1011"
-              WHEN "c" THEN "1100" WHEN "d" THEN "1101" WHEN "e" THEN "1110" WHEN "f" THEN "1111"
-              ELSE "0000" END) as hash2Bin
-        WITH i, reduce(distance = 0, idx IN range(0, size(hash1Bin)-1) |
-          distance + CASE WHEN substring(hash1Bin, idx, 1) <> substring(hash2Bin, idx, 1) THEN 1 ELSE 0 END) as distance
-        WHERE distance <= $threshold
-        RETURN i.id, i.pHash, distance
-        ORDER BY distance
-        LIMIT 1
-      `, {
-        pHash,
-        threshold: 3
-      });
-
-      return response.records.length > 0 ? response.records[0].get('i.id') : null;
+        WHERE i.pHash = $pHash
+        RETURN i.id as id
+      `, { pHash });
     });
 
-    return result;
+    return result.records[0]?.get('id') || null;
   } finally {
     await session.close();
   }
 }
 
-export async function ensureUserExists(email, name, providerId) {
-  const driver = await getDriver();
-  const session = driver.session();
-
-  try {
-    const result = await session.run(`
-      MERGE (u:User {id: $providerId})
-      ON CREATE SET 
-        u.email = $email,
-        u.name = $name,
-        u.createdAt = datetime()
-      ON MATCH SET
-        u.lastLoginAt = datetime(),
-        u.email = $email,
-        u.name = $name
-      RETURN u.id as userId, u.email as email
-    `, {
-      providerId,
-      email,
-      name
-    });
-    
-    console.log('User ensure result:', result.records[0]?.get('email'));
-    return providerId;
-  } finally {
-    await session.close();
-  }
-}
-
+/**
+ * Get image by ID
+ * @param {string} imageId - ID of the image to retrieve
+ * @returns {Promise<Object|null>} Image data if found, null otherwise
+ */
 export async function getImageById(imageId) {
   const driver = await getDriver();
   const session = driver.session();
 
   try {
     const result = await session.executeRead(async (tx) => {
-      const imageQuery = await tx.run(
-        `MATCH (i:Image {id: $imageId})
-         OPTIONAL MATCH (i)-[:HAS_ATTRIBUTE]->(a:Attribute)
-         RETURN i, collect(DISTINCT {name: a.name, value: a.value}) as attributes`,
-        { imageId }
-      );
+      const imageResult = await tx.run(`
+        MATCH (i:Image {id: $imageId})
+        OPTIONAL MATCH (i)-[:HAS_COLOR]->(c:Color)
+        OPTIONAL MATCH (i)-[:CONTAINS]->(o:Object)
+        OPTIONAL MATCH (i)-[:HAS_STYLE]->(s:Style)
+        RETURN i,
+               collect(DISTINCT c.name) as colors,
+               collect(DISTINCT o.name) as objects,
+               collect(DISTINCT s.name) as styles
+      `, { imageId });
 
-      if (imageQuery.records.length === 0) {
+      if (!imageResult.records[0]) {
         return null;
       }
 
-      const record = imageQuery.records[0];
+      const record = imageResult.records[0];
       const image = record.get('i').properties;
-      const attributes = record.get('attributes');
+      const colors = record.get('colors');
+      const objects = record.get('objects');
+      const styles = record.get('styles');
 
       return {
         ...image,
-        attributes
+        colors,
+        objects,
+        styles
       };
     });
 

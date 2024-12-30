@@ -37,6 +37,7 @@ export async function findUserById(userId) {
  * @param {string} userData.email - User's email
  * @param {string} [userData.image] - User's profile image URL
  * @param {boolean} [userData.isTestUser] - Whether this is a test user
+ * @param {boolean} [userData.isWhitelisted] - Whether this user is whitelisted
  * @returns {Promise<Object>} The created user object
  */
 export async function createUser(userData) {
@@ -52,7 +53,8 @@ export async function createUser(userData) {
                 email: $email,
                 image: $image,
                 isTestUser: $isTestUser,
-                createdAt: datetime()
+                createdAt: datetime(),
+                isWhitelisted: $isWhitelisted
             })
             RETURN u
             `,
@@ -61,12 +63,103 @@ export async function createUser(userData) {
                 name: userData.name,
                 email: userData.email,
                 image: userData.image || null,
-                isTestUser: userData.isTestUser || false
+                isTestUser: userData.isTestUser || false,
+                isWhitelisted: userData.isWhitelisted || false
             }
         );
 
         const user = result.records[0].get('u').properties;
         return user;
+    } finally {
+        await session.close();
+    }
+}
+
+/**
+ * Check if an email is whitelisted
+ * @param {string} email - The email to check
+ * @returns {Promise<boolean|null>} Whether the email is whitelisted, null if user doesn't exist
+ */
+export async function isEmailWhitelisted(email) {
+    const driver = await getDriver();
+    const session = driver.session();
+
+    try {
+        const result = await session.run(
+            `
+            MATCH (u:User {email: $email})
+            RETURN u.isWhitelisted AS isWhitelisted
+            `,
+            { email }
+        );
+
+        if (result.records.length === 0) {
+            return null; // Return null for non-existent users
+        }
+
+        return result.records[0].get('isWhitelisted') === true;
+    } finally {
+        await session.close();
+    }
+}
+
+/**
+ * Request whitelist access for an email
+ * @param {Object} userData - User data including email and profile info
+ * @param {string} userData.id - User's ID from OAuth
+ * @param {string} userData.email - User's email
+ * @param {string} userData.name - User's name
+ * @param {string} [userData.image] - User's profile image URL
+ * @returns {Promise<Object>} The whitelist request status
+ */
+export async function requestWhitelistAccess(userData) {
+    const driver = await getDriver();
+    const session = driver.session();
+
+    try {
+        // First check if user exists and is already whitelisted
+        const checkResult = await session.run(
+            `
+            MATCH (u:User {email: $email})
+            RETURN u.isWhitelisted as isWhitelisted
+            `,
+            { email: userData.email }
+        );
+
+        // If user exists and is whitelisted, return current status
+        if (checkResult.records.length > 0 && checkResult.records[0].get('isWhitelisted') === true) {
+            return { isWhitelisted: true };
+        }
+
+        // Create or update user with full profile data
+        const result = await session.run(
+            `
+            MERGE (u:User {email: $email})
+            ON CREATE SET 
+                u.id = $id,
+                u.name = $name,
+                u.image = $image,
+                u.isWhitelisted = false,
+                u.createdAt = datetime()
+            ON MATCH SET
+                u.name = $name,
+                u.image = $image
+                ${userData.id ? ', u.id = $id' : ''}
+            RETURN u
+            `,
+            {
+                id: userData.id || null,
+                email: userData.email,
+                name: userData.name,
+                image: userData.image || null
+            }
+        );
+
+        const user = result.records[0].get('u').properties;
+        return {
+            isWhitelisted: user.isWhitelisted || false,
+            user
+        };
     } finally {
         await session.close();
     }
