@@ -35,6 +35,38 @@ Feature: Image Upload and AI Analysis
     And I should receive a success response with the image ID and metadata
     # Upload flow in src/app/api/images/upload/route.js
 
+  @implemented @file:src/lib/storage/imageProcessor.js
+  Scenario: WebP Image Conversion
+    Given I have uploaded an image file
+    When the backend processes the image
+    Then it should convert the image to WebP format
+    And generate 3 sizes while maintaining aspect ratio:
+      | Size          | Width  | Height Calculation |
+      | Thumbnail     | 100px  | Maintain Ratio     |
+      | Preview       | 400px  | Maintain Ratio     |
+      | Full Size     | 2048px | Maintain Ratio     |
+
+  @implemented @file:src/lib/storage/gcs.js
+  Scenario: Google Cloud Storage Upload
+    Given the system has generated WebP images
+    When uploading to Google Cloud Storage
+    Then it should:
+      | Step                  | Description                               |
+      | Upload All Sizes      | Upload thumbnail, preview, and full size |
+      | Generate URLs         | Create public URLs for each size         |
+      | Prepare DB Package    | Combine URLs and metadata for storage    |
+
+  @implemented @file:src/lib/neo4j/imageRepository.js
+  Scenario: Neo4j Image Data Storage
+    Given the images are uploaded to GCS
+    And the AI analysis is complete
+    When saving to Neo4j
+    Then the system should:
+      | Step                | Implementation                             |
+      | Create Image Node   | Save URLs and metadata                    |
+      | Link Attributes     | Create attribute nodes and relationships  |
+      | User Association    | Link image to user who uploaded it        |
+
   @implemented @file:src/app/api/images/upload/route.js
   Scenario: Unauthorized Upload Attempt
     Given I try to upload an image

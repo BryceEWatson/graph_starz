@@ -38,169 +38,156 @@ Essential methods to mock, ensuring chainability and call tracking:
 
 ### Essential Mocking Techniques
 
-**1. Addressing `ReferenceError` during Initialization:**
-*   Problem: Directly referencing the mock object within its definition leads to errors.
-*   Solution: Use a function within `mockReturnValue` that returns the mock object or use `mockReturnThis()`. Or, create mock object first and then add methods to it.
-    ```javascript
-    // Corrected
-    forceLink: jest.fn().mockImplementation(() => {
-        const mock = {
-            id: jest.fn().mockReturnValue(() => mock),
-            distance: jest.fn().mockReturnValue(() => mock),
-            strength: jest.fn().mockReturnValue(() => mock)
-        };
-        return mock;
-    });
-
-    // Or using mockReturnThis()
-     forceLink: jest.fn().mockImplementation(() => {
-        const mock = {
-            id: jest.fn().mockReturnThis(),
-            distance: jest.fn().mockReturnThis(),
-            strength: jest.fn().mockReturnThis()
-        };
-        return mock;
-    });
-
-    //Or Create Mock Object First
-     forceLink: jest.fn().mockImplementation(() => {
-        const mock = {};
-        mock.id = jest.fn().mockReturnThis();
-        mock.distance = jest.fn().mockReturnThis();
-        mock.strength = jest.fn().mockReturnThis();
-        return mock;
-    });
-    ```
-
-**2. Handling Chainable APIs:**
-   *   Problem: D3's chainable methods require mocks to return new mock objects to enable method chaining.
-   *   Solution: Mock methods to return either the same mock object (using `mockReturnThis()`) or a new mock object with its own mocked methods.
-   *  Helper functions can be used to reduce code duplication.
-     ```javascript
-    const createMockD3Selection = () => ({
-      append: jest.fn().mockReturnValue({
-          attr: jest.fn().mockReturnThis(),
-          style: jest.fn().mockReturnThis(),
-          text: jest.fn().mockReturnThis(),
-      }),
-      attr: jest.fn().mockReturnThis(),
-      style: jest.fn().mockReturnThis(),
-      text: jest.fn().mockReturnThis(),
-      remove: jest.fn().mockReturnThis(),
-      selectAll: jest.fn().mockReturnThis(),
-      data: jest.fn().mockReturnThis(),
-      join: jest.fn().mockReturnValue({
-        attr: jest.fn().mockReturnThis(),
-        style: jest.fn().mockReturnThis(),
-        remove: jest.fn().mockReturnThis(),
-      })
-    });
-    ```
-**3.  Tracking Method Calls**
-    *   Problem: `jest.fn().mock.calls` array is empty if the mock doesn't return an object with the correct mocked methods to maintain chainability.
-    *  Solution: Ensure each method in the chain returns an object that has the next method mocked.
-    *   Verification:
-        * Use `expect(mockMethod).toHaveBeenCalledWith(...args)` to check specific arguments.
-        * Use `expect(mockMethod.mock.calls).toEqual([...expectedCalls])` to verify all arguments.
-    *  Side effects: Use render testing libraries such as `react-testing-library` to query the DOM and verify the side effects.
-
-**4. Element Type Tracking:**
-   *   Problem: Element type information is lost when using `selection.filter()` and `selection.append()` without explicit preservation.
-   *   Solution:
-        *   Explicitly set and pass a `_type` property on selection mocks.
-        *   When tracking attribute calls, store element type in a three-tuple: `[name, value, type]`.
-        *   Share mock call tracking between parent and child selections.
-   * Attribute Storage: Store both raw values and functions for non-function attributes.
-
-        ```javascript
-             if (typeof value === 'function') {
-                 this._attributes[name] = value;
-             } else {
-                 this._attributes[name] = value;
-                 this._attributes[`${name}_fn`] = () => value;
-             }
-        ```
-
-**5. Mocking D3 Force Simulation**
-*  Granular Mocking: Mock individual functions like `d3.forceSimulation`, `d3.forceLink`, etc. for precise control, however it requires more setup and may be more brittle to changes in the D3 API.
-* High-Level Behavioral Mocking: Mock the overall behavior, such as node position updates on "tick". Simplifies setup but offers less control.
-* Minimal Mock: Mock only the necessary parts for testing node rendering. For example:
+#### 1. Selection Mocking
+*   Problem: D3's chainable methods require mocks to return new mock objects to enable method chaining.
+*   Solution: Mock methods to return either the same mock object (using `mockReturnThis()`) or a new mock object with its own mocked methods.
+*  Helper functions can be used to reduce code duplication.
   ```javascript
-    jest.mock('d3', () => ({
-    forceSimulation: jest.fn().mockImplementation((nodes) => {
-        return {
-            force: jest.fn().mockReturnThis(),
-            on: jest.fn().mockImplementation((event, callback) => {
-                 if (event === 'tick') {
-                    nodes.forEach(node => {
-                      node.x = Math.random() * 100;
-                      node.y = Math.random() * 100;
-                    })
-                    callback();
-                }
-                return this;
-            }),
-            nodes: jest.fn().mockImplementation(() => nodes),
-            stop: jest.fn().mockReturnThis(),
-        };
-    }),
-    forceLink: jest.fn().mockImplementation(() => ({
-         id: jest.fn().mockReturnThis(),
-            distance: jest.fn().mockReturnThis(),
-            strength: jest.fn().mockReturnThis(),
-    })),
-     forceManyBody: jest.fn().mockReturnValue({}),
-    forceCenter: jest.fn().mockReturnValue({}),
-}));
+ const createMockD3Selection = () => ({
+   append: jest.fn().mockReturnValue({
+       attr: jest.fn().mockReturnThis(),
+       style: jest.fn().mockReturnThis(),
+       text: jest.fn().mockReturnThis(),
+   }),
+   attr: jest.fn().mockReturnThis(),
+   style: jest.fn().mockReturnThis(),
+   text: jest.fn().mockReturnThis(),
+   remove: jest.fn().mockReturnThis(),
+   selectAll: jest.fn().mockReturnThis(),
+   data: jest.fn().mockReturnThis(),
+   join: jest.fn().mockReturnValue({
+     attr: jest.fn().mockReturnThis(),
+     style: jest.fn().mockReturnThis(),
+     remove: jest.fn().mockReturnThis(),
+   })
+ });
+ ```
 
+#### 2. Zoom Mock Implementation
+
+**State Management:**
+- Maintain transform object with `k` (scale), `x`, `y` properties
+- Initialize with identity transform `{ k: 1, x: 0, y: 0 }`
+- Store zoom extent as `[[x0, y0], [x1, y1]]`
+
+**Key Methods:**
+```javascript
+class ZoomMock {
+    constructor() {
+        this.transform = { k: 1, x: 0, y: 0 };
+        this.extent = [[-2000, -1600], [2000, 1600]];
+        this.callHistory = [];
+    }
+
+    scaleExtent([min, max]) {
+        if (!arguments.length) return this._scaleExtent;
+        this._scaleExtent = [min, max];
+        this.callHistory.push(['scaleExtent', [min, max]]);
+        return this;
+    }
+
+    scaleTo(selection, scale, center) {
+        this.transform.k = scale;
+        if (center) {
+            // Update transform based on center
+            this.transform.x = center[0];
+            this.transform.y = center[1];
+        }
+        this.callHistory.push(['scaleTo', [selection, scale, center]]);
+        return this;
+    }
+}
 ```
 
-### Common Testing Pitfalls
+**Event Handling:**
+- Track event listeners in a dictionary
+- Support both programmatic and user-initiated zooming
+- Emit zoom events with transform data
 
-1. **Element Counting**
-   - Only count explicitly classed elements (e.g. `.graph-node`).
-   - Don't include child elements in node counts.
-   - Verify both nodes and links separately.
+#### 3. Force Simulation Mock
 
-2. **Data Inheritance**
-   - Child elements inherit data but not classes.
-   - Data must persist through the selection chain.
-   - Verify data binding on each element type.
+**State Management:**
+- Track active forces in a dictionary by type
+- Store simulation parameters (alpha, alphaMin, etc.)
+- Maintain node and link data arrays
 
-3. **Selection Chain**
-   - Maintain proper parent-child relationships.
-   - Return correct selection objects.
-   - Handle method chaining correctly by mocking methods in the chain.
+**Implementation Example:**
+```javascript
+class ForceSimulationMock {
+    constructor() {
+        this.forces = {};
+        this.nodes = [];
+        this.alpha = 1;
+        this.alphaMin = 0.001;
+        this.callHistory = [];
+    }
 
-### Testing Strategy
+    force(name, force) {
+        if (arguments.length < 2) return this.forces[name];
+        this.forces[name] = force;
+        this.callHistory.push(['force', [name, force]]);
+        return this;
+    }
 
-1.  **Graph Setup Tests**
-    ```javascript
-    test('creates correct number of nodes and links', () => {
-      // Verify exact node count (only .graph-node elements)
-      // Verify exact link count (only .graph-link elements)
-    });
-    ```
+    tick(iterations = 1) {
+        for (let i = 0; i < iterations; ++i) {
+            // Simulate force calculations
+            this.nodes.forEach(node => {
+                node.x += Math.random() - 0.5;
+                node.y += Math.random() - 0.5;
+            });
+        }
+        return this;
+    }
+}
+```
 
-2.  **Node Structure Tests**
-    ```javascript
-    test('applies correct node types and styles', () => {
-      // Verify node class assignment
-      // Check data binding
-      // Validate child elements (circle, text)
-    });
-    ```
+### Testing Best Practices
 
-3.  **Force Simulation Tests**
-    ```javascript
-    test('force simulation is initialized correctly', () => {
-      // Verify force parameters
-      // Check node and link assignments
-      // Validate event handlers
-    });
-    ```
+#### 1. Test Organization
+- Group related tests logically.
+- Test edge cases and error conditions.
+- Verify visual and functional aspects.
+- Document expected behavior.
 
-## Testing Selection Management
+#### 2. Integration Testing
+- Use JSDOM for headless testing
+- Combine mocked forces with real D3 code
+- Test actual DOM manipulation for complex behaviors
+
+#### 3. Data-Driven Testing
+```javascript
+test.each([
+    [{ nodes: [], links: [] }, { x: 0, y: 0 }],
+    [{ nodes: [{ id: 1 }], links: [] }, { x: 100, y: 100 }]
+])('simulation with %p produces %p', (input, expected) => {
+    const sim = new ForceSimulationMock()
+        .nodes(input.nodes)
+        .force('link', d3.forceLink(input.links));
+    sim.tick();
+    expect(sim.nodes[0]).toMatchObject(expected);
+});
+```
+
+### Common Pitfalls and Solutions
+
+1. **Reference Errors During Initialization**
+   - Problem: Direct self-reference in mock definition
+   - Solution: Use function within mockReturnValue or create object first
+
+2. **Lost Element Type Information**
+   - Problem: Element type lost during filter/append
+   - Solution: Explicitly track _type property
+
+3. **Transform String Generation**
+   - Problem: Incorrect transform string format
+   - Solution: Implement toString() method on transform object
+
+4. **Event Propagation**
+   - Problem: Events not properly simulated
+   - Solution: Maintain event dictionary and proper emission order
+
+### Testing Selection Management
 
 ### Core Test Cases
 ```javascript
@@ -232,14 +219,7 @@ describe('Selection Management', () => {
 });
 ```
 
-### Testing Best Practices
-
-1. Test one behavior at a time.
-2. Use clear, descriptive test names.
-3. Keep setup code minimal and focused.
-4. Test both success and error cases.
-
-## Best Practices
+### Best Practices
 
 1.  **Mock Implementation**
     -   Track created elements separately.

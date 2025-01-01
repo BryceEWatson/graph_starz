@@ -101,3 +101,22 @@ Feature: User Authentication
         SET u.isWhitelisted = true
         RETURN u.name, u.email, u.isWhitelisted;
         """
+
+    @implemented @file:src/lib/neo4j/userRepository.js
+    Scenario: New User Database Integration
+        Given I sign in with Google for the first time
+        When I am redirected back to the platform
+        Then the system should check if I exist in the database
+        And if I don't exist, create a new user node with my Google profile data
+        And store my:
+            | Property      | Source               |
+            | Name         | Google Profile        |
+            | Email        | Google Profile        |
+            | Provider ID  | Google Authentication |
+
+    @implemented @file:src/lib/neo4j/userRepository.js
+    Scenario: Existing User Sign In
+        Given I am an existing user
+        When I sign in with Google
+        Then the system should find my existing user node
+        And update my session with the stored user data

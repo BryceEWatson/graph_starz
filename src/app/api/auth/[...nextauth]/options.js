@@ -67,28 +67,32 @@ export const authOptions = {
             return session;
         },
 
-        async redirect({ url }) {
-            // Get the current URL's origin
-            const origin = isDevelopment ? 'http://localhost:3000' : 'https://graphstarz.com';
+        async redirect({ url, baseUrl }) {
+            try {
+                // Ensure URL is absolute
+                const isAbsolute = url.startsWith('http://') || url.startsWith('https://');
+                if (!isAbsolute) {
+                    url = new URL(url, baseUrl).toString();
+                }
 
-            // If it's a sign-out request, always redirect to the origin
-            if (url.includes('/api/auth/signout')) {
-                return origin;
+                // In production, enforce HTTPS
+                if (!isDevelopment && url.startsWith('http://')) {
+                    url = url.replace('http://', 'https://');
+                }
+
+                // Allow redirects to same origin or specified callback URLs
+                if (url.startsWith(baseUrl)) {
+                    return url;
+                }
+                
+                // Default to base URL if redirect is not allowed
+                return baseUrl;
+            } catch (error) {
+                log('Redirect error:', error);
+                return baseUrl;
             }
-
-            // If it's a callback URL, redirect to origin
-            if (url.includes('/api/auth/callback')) {
-                return origin;
-            }
-
-            // If URL starts with origin, use it
-            if (url.startsWith(origin)) {
-                return url;
-            }
-
-            // Default to origin
-            return origin;
         },
+        
         async signOut({ _url, baseUrl }) {
             return baseUrl;
         }
@@ -97,5 +101,5 @@ export const authOptions = {
         signIn: '/',
         signOut: '/',
         error: '/auth/error',
-    },
+    }
 };

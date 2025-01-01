@@ -1,17 +1,30 @@
 import { NextResponse } from 'next/server'
 
 export async function middleware(request) {
-    // Skip middleware for static files and api routes
-    if (
-        request.nextUrl.pathname.startsWith('/_next') ||
-        request.nextUrl.pathname.startsWith('/api') ||
-        request.nextUrl.pathname.startsWith('/static')
-    ) {
-        return NextResponse.next()
+    // Create a response object that we'll modify
+    let response = NextResponse.next()
+
+    // Enforce HTTPS - redirect HTTP to HTTPS
+    if (process.env.NODE_ENV === 'production' && !request.nextUrl.protocol.includes('https')) {
+        return NextResponse.redirect(
+            `https://${request.nextUrl.host}${request.nextUrl.pathname}${request.nextUrl.search}`,
+            301
+        )
     }
 
-    // Continue to the next middleware
-    return NextResponse.next()
+    // Add security headers
+    const headers = response.headers
+    
+    // HSTS - Force HTTPS for 1 year
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    
+    // Other security headers
+    headers.set('X-Frame-Options', 'DENY')
+    headers.set('X-Content-Type-Options', 'nosniff')
+    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+    headers.set('X-XSS-Protection', '1; mode=block')
+    
+    return response
 }
 
 export const config = {
