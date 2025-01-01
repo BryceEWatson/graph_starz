@@ -30,11 +30,23 @@ function convertNeo4jIntegers(obj) {
     return obj;
 }
 
-export async function GET() {
+export async function GET(request) {
     try {
-        // Apply rate limiting
+        // Check authentication first
+        const session = await getServerSession(authOptions);
+        const isAuthenticated = !!session?.user?.email;
+
+        // Get IP address for rate limiting
+        const forwardedFor = request.headers.get('x-forwarded-for');
+        const clientIP = forwardedFor ? forwardedFor.split(',')[0].trim() : request.headers.get('x-real-ip') || 'unknown';
+
+        // Apply rate limiting based on auth status
         try {
-            await limiter.check(10); // 10 requests per minute
+            const rateLimit = isAuthenticated ? 60 : 10; // 60/min for auth, 10/min for unauth
+            // If IP is unknown, use a more restrictive rate limit
+            const effectiveLimit = clientIP === 'unknown' ? 5 : rateLimit;
+            const rateLimitKey = isAuthenticated ? session.user.email : `ip-${clientIP}`;
+            await limiter.check(effectiveLimit, rateLimitKey);
         } catch {
             return NextResponse.json(
                 { error: 'Too many requests. Please try again later.' },
@@ -42,9 +54,8 @@ export async function GET() {
             );
         }
 
-        // Check authentication
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.email) {
+        // Continue with auth check
+        if (!isAuthenticated) {
             log('Unauthorized access attempt');
             return NextResponse.json(
                 { error: 'Unauthorized: Please sign in to view graph data' },
@@ -97,7 +108,7 @@ export async function GET() {
                     return NextResponse.json({
                         nodes: [],
                         links: [],
-                        stats: { users: 0, images: 0, colors: 0, objects: 0 }
+                        stats: { users: 0, images: 0, attributes: 0, categories: {} }
                     });
                 }
 
@@ -110,25 +121,26 @@ export async function GET() {
                     OPTIONAL MATCH (n)-[r]->(m)
                     WITH allNodes, collect(DISTINCT r) as allRels
 
-                    // Calculate stats
+                    // Calculate stats using attribute categories
                     WITH allNodes, allRels,
                          size([n IN allNodes WHERE n:User]) as userCount,
                          size([n IN allNodes WHERE n:Image]) as imageCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'color']) as colorCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'object']) as objectCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'style']) as styleCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'technique']) as techniqueCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'mood']) as moodCount,
-                         size([n IN allNodes WHERE n:Attribute AND n.name = 'composition']) as compositionCount
+                         size([n IN allNodes WHERE n:Attribute]) as attributeCount,
+                         [n IN allNodes WHERE n:Attribute | n.category] as categories
 
                     // Return final result with layout hints
                     RETURN {
                         nodes: [node in allNodes | {
-                            id: toString(id(node)),
+                            id: CASE
+                                WHEN node:User THEN node.id
+                                WHEN node:Image THEN node.id
+                                WHEN node:Attribute THEN node.value
+                                ELSE toString(id(node))
+                            END,
                             type: CASE 
                                 WHEN node:User THEN 'user'
                                 WHEN node:Image THEN 'image'
-                                WHEN node:Attribute THEN node.name
+                                WHEN node:Attribute THEN 'attribute'
                                 ELSE toLower(head(labels(node)))
                             END,
                             name: CASE
@@ -148,52 +160,67 @@ export async function GET() {
                                 previewUrl: node.previewUrl,
                                 fullUrl: node.fullUrl,
                                 description: node.description,
+                                category: CASE 
+                                    WHEN node:Attribute THEN node.category
+                                    ELSE null
+                                END,
                                 value: node.value,
-                                name: node.name,
+                                context: node.context,
+                                prominence: node.prominence,
+                                reasoning: node.reasoning,
                                 // Add layout hints
                                 size: CASE 
                                     WHEN node:User THEN 80  // Larger user nodes
-                                    WHEN node:Image THEN 150  // Medium image nodes
-                                    WHEN node:Attribute THEN 50 // Smaller attribute nodes
+                                    WHEN node:Image THEN 200  // Larger image nodes
+                                    WHEN node:Attribute THEN 40 // Smaller attribute nodes
                                     ELSE 60
                                 END,
-                                // Color coding by node type
+                                // Color coding by node type and category
                                 color: CASE
                                     WHEN node:User THEN '#4A90E2'  // Blue for users
                                     WHEN node:Image THEN '#50C878'  // Green for images
-                                    WHEN node:Attribute AND node.name = 'color' THEN '#FFB6C1'  // Pink for colors
-                                    WHEN node:Attribute AND node.name = 'object' THEN '#DEB887'  // Brown for objects
-                                    WHEN node:Attribute AND node.name = 'style' THEN '#9370DB'   // Purple for styles
-                                    WHEN node:Attribute AND node.name = 'technique' THEN '#20B2AA' // Turquoise for techniques
-                                    WHEN node:Attribute AND node.name = 'mood' THEN '#FFD700'    // Gold for moods
-                                    WHEN node:Attribute AND node.name = 'composition' THEN '#FF7F50' // Coral for composition
+                                    WHEN node:Attribute THEN CASE 
+                                        WHEN node.category = 'color' THEN '#FFB6C1'      // Pink for colors
+                                        WHEN node.category = 'object' THEN '#DEB887'     // Brown for objects
+                                        WHEN node.category = 'technique' THEN '#20B2AA'  // Turquoise for techniques
+                                        WHEN node.category = 'mood' THEN '#FFD700'       // Gold for moods
+                                        WHEN node.category = 'composition' THEN '#FF7F50' // Coral for composition
+                                        WHEN node.category = 'style' THEN '#C7B8EA'      // Purple for styles
+                                        WHEN node.category = 'lighting' THEN '#F0E68C'   // Khaki for lighting
+                                        WHEN node.category = 'texture' THEN '#98FB98'    // Pale green for textures
+                                        WHEN node.category = 'pattern' THEN '#87CEFA'    // Light blue for patterns
+                                        WHEN node.category = 'perspective' THEN '#DDA0DD' // Plum for perspective
+                                        ELSE '#808080'  // Gray for unknown types
+                                    END
                                     ELSE '#808080'  // Gray for unknown types
                                 END
                             }
                         }],
                         relationships: [rel in allRels | {
-                            source: toString(id(startNode(rel))),
-                            target: toString(id(endNode(rel))),
+                            source: CASE
+                                WHEN startNode(rel):User THEN startNode(rel).id
+                                WHEN startNode(rel):Image THEN startNode(rel).id
+                                WHEN startNode(rel):Attribute THEN startNode(rel).value
+                                ELSE toString(id(startNode(rel)))
+                            END,
+                            target: CASE
+                                WHEN endNode(rel):User THEN endNode(rel).id
+                                WHEN endNode(rel):Image THEN endNode(rel).id
+                                WHEN endNode(rel):Attribute THEN endNode(rel).value
+                                ELSE toString(id(endNode(rel)))
+                            END,
                             type: type(rel),
-                            // Add relationship styling
                             properties: {
-                                weight: 1,  // Can be adjusted based on relationship importance
-                                distance: CASE
-                                    WHEN type(rel) = 'UPLOADED' THEN 100  // Keep users closer to their images
-                                    WHEN type(rel) = 'HAS_ATTRIBUTE' THEN 50  // Keep attributes relatively close
-                                    ELSE 75
-                                END
+                                prominence: rel.prominence,
+                                context: rel.context,
+                                reasoning: rel.reasoning
                             }
                         }],
                         stats: {
                             users: userCount,
                             images: imageCount,
-                            colors: colorCount,
-                            objects: objectCount,
-                            styles: styleCount,
-                            techniques: techniqueCount,
-                            moods: moodCount,
-                            compositions: compositionCount
+                            attributes: attributeCount,
+                            categories: apoc.coll.frequencies(categories)
                         },
                         // Add layout configuration
                         layout: {
@@ -240,7 +267,7 @@ export async function GET() {
                 return NextResponse.json({
                     nodes: convertedData.nodes || [],
                     links: convertedData.relationships || [],
-                    stats: convertedData.stats || { users: 0, images: 0, colors: 0, objects: 0 },
+                    stats: convertedData.stats || { users: 0, images: 0, attributes: 0, categories: {} },
                     layout: convertedData.layout
                 });
 

@@ -4,20 +4,20 @@ import * as d3 from 'd3';
 const forceConfig = {
     strength: {
         sameType: 0.7,
-        userImage: 0.5,
-        default: 0.3,
+        userImage: 0.3,
+        default: 0.2,
         variation: {
-            min: 0.8,  // -20% variation
-            max: 1.2   // +20% variation
+            min: 0.8,
+            max: 1.2
         }
     },
     distance: {
-        image: 180,
-        user: 120,
-        attribute: 80,
+        image: 250,
+        user: 150,
+        attribute: 200,
         variation: {
-            min: 0.9,  // -10% variation
-            max: 1.1   // +10% variation
+            min: 0.9,
+            max: 1.1
         }
     }
 };
@@ -93,9 +93,9 @@ export function setupGraph(svgElement, data, width, height, theme) {
 
     // Node size configurations
     const nodeSizes = {
-      user: 60,  // 60px diameter for users
-      image: { width: 160, height: 120 },  // Max dimensions for images
-      attribute: 30  // 30px diameter for attributes
+        user: 60,  // 60px diameter for users
+        image: { width: 160, height: 120 },  // Max dimensions for images
+        attribute: 30  // 30px diameter for attributes
     };
 
     // Create a container for the graph
@@ -107,8 +107,13 @@ export function setupGraph(svgElement, data, width, height, theme) {
         .data(data.links)
         .join('line')
         .attr('stroke', colors.linkStroke)
-        .attr('stroke-width', 1)
-        .attr('stroke-opacity', 0.6);
+        .attr('stroke-width', d => d.type === 'HAS_ATTRIBUTE' ? 2 : 1)
+        .attr('stroke-opacity', d => {
+            if (d.type === 'HAS_ATTRIBUTE') {
+                return d.properties?.prominence || 0.6;
+            }
+            return 0.6;
+        });
 
     // Create the nodes
     const nodes = container.append('g')
@@ -123,8 +128,9 @@ export function setupGraph(svgElement, data, width, height, theme) {
         d.element = this;  // Store element reference
 
         if (d.type === 'image') {
-            // For image nodes
-            const imageUrl = d.properties?.fullUrl || d.properties?.previewUrl || d.properties?.thumbnailUrl;
+            // For image nodes - use previewUrl for graph visualization
+            // as it's the medium-sized image, which is best for the graph
+            const imageUrl = d.properties?.previewUrl || d.properties?.fullUrl || d.properties?.thumbnailUrl;
             node.append('image')
                 .attr('xlink:href', imageUrl || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIi8+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiLz48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIi8+PC9zdmc+')
                 .attr('width', d.properties?.size || 150)
@@ -138,25 +144,40 @@ export function setupGraph(svgElement, data, width, height, theme) {
             const typeColors = {
                 user: '#4A90E2',      // Blue for users
                 image: '#50C878',     // Green for images
-                color: '#FFB6C1',     // Pink for colors
-                object: '#DEB887',    // Brown for objects
-                style: '#9370DB',     // Purple for styles
-                technique: '#20B2AA', // Turquoise for techniques
-                mood: '#FFD700',      // Gold for moods
-                composition: '#FF7F50' // Coral for composition
+                attribute: {
+                    color: '#FFC5C5',     // Pink for colors
+                    object: '#F5DEB3',    // Brown for objects
+                    style: '#C7B8EA',     // Purple for styles
+                    technique: '#87CEEB', // Turquoise for techniques
+                    mood: '#F2C464',      // Gold for moods
+                    composition: '#FFA07A' // Coral for composition
+                }
             };
             
             node.append('circle')
                 .attr('r', size / 2)
-                .attr('fill', typeColors[d.type] || colors.defaultNode)
+                .attr('fill', d => {
+                    if (d.type === 'attribute') {
+                        const category = d.properties?.category
+                        const color = typeColors.attribute[category] || colors.defaultNode
+                        console.log('Attribute node:', {
+                            name: d.properties?.value || d.name,
+                            category,
+                            color,
+                            properties: d.properties
+                        })
+                        return color
+                    }
+                    return typeColors[d.type] || colors.defaultNode
+                })
                 .attr('stroke', colors.nodeBorder)
                 .attr('stroke-width', 2)
                 .style('filter', 'url(#drop-shadow)');
         }
 
-        // Add labels
+        // Add labels with tooltips
         node.append('text')
-            .text(d.properties?.name || d.name || '')
+            .text(d.properties?.value || d.name || '')
             .attr('dy', d.type === 'image' ? '4em' : '-1.5em')
             .attr('text-anchor', 'middle')
             .attr('fill', colors.textFill)
@@ -167,9 +188,15 @@ export function setupGraph(svgElement, data, width, height, theme) {
             .style('paint-order', 'stroke')
             .style('stroke', '#000')
             .style('stroke-width', '0.5px');
+
+        // Add title for tooltip
+        if (d.type === 'attribute' && d.properties?.context) {
+            node.append('title')
+                .text(`${d.properties.value}\n${d.properties.context}`);
+        }
     });
 
-    // Initialize force simulation
+    // Initialize force simulation with attribute relationship handling
     const simulation = d3.forceSimulation(data.nodes)
         .force('link', d3.forceLink(data.links)
             .id(d => d.id)
@@ -177,7 +204,13 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 const sourceType = link.source.type;
                 const targetType = link.target.type;
                 
-                // Set link distances based on connected node types
+                // Adjust distances for attribute relationships
+                if (link.type === 'HAS_ATTRIBUTE') {
+                    const prominence = link.properties?.prominence || 0.5;
+                    return forceConfig.distance.attribute * (2 - prominence); // Closer for high prominence
+                }
+                
+                // Default distances based on node types
                 if (sourceType === 'image' || targetType === 'image') {
                     return forceConfig.distance.image * getVariation(`${sourceType}${targetType}`, forceConfig.distance.variation);
                 } else if (sourceType === 'user' || targetType === 'user') {
@@ -187,10 +220,14 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 }
             })
             .strength(link => {
+                // Stronger connections for high-prominence attributes
+                if (link.type === 'HAS_ATTRIBUTE') {
+                    return (link.properties?.prominence || 0.5) * forceConfig.strength.default;
+                }
+                
                 const sourceType = link.source.type;
                 const targetType = link.target.type;
                 
-                // Stronger links between same type nodes and user-image connections
                 if (sourceType === targetType) {
                     return forceConfig.strength.sameType * getVariation(`${sourceType}${targetType}`, forceConfig.strength.variation);
                 } else if ((sourceType === 'user' && targetType === 'image') ||
@@ -205,33 +242,33 @@ export function setupGraph(svgElement, data, width, height, theme) {
                 // Set repulsion force based on node type
                 switch (node.type) {
                     case 'image':
-                        return -500; // Strong repulsion for images
+                        return -800; // Increased from -500 for stronger repulsion
                     case 'user':
-                        return -300; // Medium repulsion for users
+                        return -400; // Increased from -300
                     default:
-                        return -100; // Light repulsion for attributes
+                        return -200; // Increased from -100
                 }
             })
-            .distanceMax(500)
-            .distanceMin(50))
+            .distanceMax(800)    // Increased from 500
+            .distanceMin(100))   // Increased from 50
         .force('center', d3.forceCenter(width / 2, height / 2))
         .force('collide', d3.forceCollide()
             .radius(d => {
                 // Set collision radius based on node type
                 if (d.type === 'image') {
-                    return 90; // Larger collision area for images
+                    return 120;  // Increased from 90
                 } else if (d.type === 'user') {
-                    return 40; // Medium collision area for users
+                    return 50;   // Increased from 40
                 } else {
-                    return 20; // Small collision area for attributes
+                    return 30;   // Increased from 20
                 }
             })
-            .strength(0.7)
-            .iterations(2))
-        .alpha(0.3)         // Initial activity level
-        .alphaDecay(0.02)   // Slower decay for more stable layout
-        .alphaTarget(0.05)  // Keep slight movement
-        .velocityDecay(0.3);// Smooth movement
+            .strength(0.8)      // Increased from 0.7
+            .iterations(3))     // Increased from 2
+        .alpha(0.3)
+        .alphaDecay(0.01)      // Reduced from 0.02 for slower cooling
+        .alphaTarget(0.05)
+        .velocityDecay(0.4);   // Increased from 0.3 for more stability
 
     // Update function for force simulation
     simulation.on('tick', () => {

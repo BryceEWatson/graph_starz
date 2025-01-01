@@ -4,6 +4,7 @@ const debug = require('debug');
 const path = require('path');
 const dotenv = require('dotenv');
 const fs = require('fs');
+const { Storage } = require('@google-cloud/storage');
 
 const log = debug('db:init:main');
 const errorLog = debug('db:init:error');
@@ -20,6 +21,36 @@ if (process.env.NODE_ENV !== 'production') {
     const envPath = path.join(process.cwd(), '.env');
     log('Loading environment from:', envPath);
     dotenv.config({ path: envPath });
+}
+
+/**
+ * Clear all files from the GCS bucket
+ * @returns {Promise<void>}
+ */
+async function clearBucket() {
+    const bucketName = process.env.GCS_BUCKET_NAME;
+    if (!bucketName) {
+        throw new Error('GCS_BUCKET_NAME is required');
+    }
+
+    // Get credentials file path from either environment variable
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (!credentialsPath) {
+        throw new Error('Either GOOGLE_APPLICATION_CREDENTIALS_PATH or GOOGLE_APPLICATION_CREDENTIALS must be set');
+    }
+
+    // Resolve the credentials path relative to cwd
+    const resolvedPath = path.resolve(process.cwd(), credentialsPath);
+    log('Using credentials from:', resolvedPath);
+
+    const storage = new Storage({
+        projectId: process.env.GOOGLE_CLOUD_PROJECT,
+        keyFilename: resolvedPath
+    });
+
+    const bucket = storage.bucket(bucketName);
+    const [files] = await bucket.getFiles();
+    await Promise.all(files.map(file => file.delete()));
 }
 
 async function validateSetup(session) {
@@ -39,8 +70,7 @@ async function validateSetup(session) {
     const requiredConstraints = [
         'user_id_unique',
         'image_id_unique',
-        'color_name_unique',
-        'object_name_unique'
+        'attribute_category_value_unique'
     ];
     log('DEBUG - Found constraints:', constraints.records.map(record => record.get('name')));
     const missingConstraints = requiredConstraints.filter(name => 
@@ -59,7 +89,9 @@ async function validateSetup(session) {
     const requiredIndexes = [
         'user_email',
         'user_lastLogin',
-        'image_createdAt'
+        'image_createdAt',
+        'attribute_category',
+        'attribute_value'
     ];
     log('DEBUG - Found indexes:', indexes.records.map(record => record.get('name')));
     const missingIndexes = requiredIndexes.filter(name => 
@@ -150,29 +182,34 @@ async function initializeDb() {
     
     try {
         log('Starting database initialization...');
-        log('DEBUG - Environment variables:');
-        log('DEBUG - NODE_ENV:', process.env.NODE_ENV);
-        log('DEBUG - FORCE_RESET:', process.env.FORCE_RESET);
-        log('DEBUG - CLEAR_DATA:', process.env.CLEAR_DATA);
-        
-        const environment = process.env.NODE_ENV === 'production' ? 'production' : 'development';
-        
-        // Get all secrets including GCS credentials
+        const environment = process.env.NODE_ENV || 'development';
+        log('Environment:', environment);
+
+        // Get secrets first
         const secrets = await getSecrets(environment);
-        
-        // Set GCS credentials in environment as JSON string
-        process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON = JSON.stringify(secrets.GOOGLE_APPLICATION_CREDENTIALS);
-        
-        if (!secrets.NEO4J_URI || !secrets.NEO4J_USER || !secrets.NEO4J_PASSWORD) {
-            throw new Error('Missing required Neo4j credentials');
+        for (const [key, value] of Object.entries(secrets)) {
+            process.env[key] = value;
         }
-        
-        log('DEBUG - NEO4J_URI before driver creation:', secrets.NEO4J_URI);
+
+        // Clear GCS bucket if requested
+        if (process.env.CLEAR_DATA === 'true' || process.env.FORCE_RESET === 'true') {
+            log('Clearing GCS bucket...');
+            try {
+                await clearBucket();
+                log('GCS bucket cleared successfully');
+            } catch (error) {
+                errorLog('Error clearing GCS bucket:', error);
+                // Don't throw here, continue with database setup
+            }
+        }
+
+        // Initialize Neo4j driver
+        log('DEBUG - NEO4J_URI before driver creation:', process.env.NEO4J_URI);
         
         // Create Neo4j driver instance
         driver = neo4j.driver(
-            secrets.NEO4J_URI,
-            neo4j.auth.basic(secrets.NEO4J_USER, secrets.NEO4J_PASSWORD)
+            process.env.NEO4J_URI,
+            neo4j.auth.basic(process.env.NEO4J_USER, process.env.NEO4J_PASSWORD)
         );
 
         // Test connection
@@ -244,34 +281,42 @@ async function initializeDb() {
         log('DEBUG - Created image_id_unique constraint');
 
         await session.run(`
-            CREATE CONSTRAINT color_name_unique IF NOT EXISTS
-            FOR (c:Color) REQUIRE c.name IS UNIQUE
+            CREATE CONSTRAINT attribute_category_value_unique IF NOT EXISTS
+            FOR (a:Attribute) REQUIRE (a.category, a.value) IS UNIQUE
         `);
-        log('DEBUG - Created color_name_unique constraint');
-
-        await session.run(`
-            CREATE CONSTRAINT object_name_unique IF NOT EXISTS
-            FOR (o:Object) REQUIRE o.name IS UNIQUE
-        `);
-        log('DEBUG - Created object_name_unique constraint');
+        log('DEBUG - Created attribute_category_value_unique constraint');
 
         // Create indexes
-        log('DEBUG - Starting to create indexes...');
         log('Creating indexes...');
         await session.run(`
             CREATE INDEX user_email IF NOT EXISTS
             FOR (u:User) ON (u.email)
         `);
+        log('DEBUG - Created user_email index');
 
         await session.run(`
             CREATE INDEX user_lastLogin IF NOT EXISTS
             FOR (u:User) ON (u.lastLogin)
         `);
+        log('DEBUG - Created user_lastLogin index');
 
         await session.run(`
             CREATE INDEX image_createdAt IF NOT EXISTS
             FOR (i:Image) ON (i.createdAt)
         `);
+        log('DEBUG - Created image_createdAt index');
+
+        await session.run(`
+            CREATE INDEX attribute_category IF NOT EXISTS
+            FOR (a:Attribute) ON (a.category)
+        `);
+        log('DEBUG - Created attribute_category index');
+
+        await session.run(`
+            CREATE INDEX attribute_value IF NOT EXISTS
+            FOR (a:Attribute) ON (a.value)
+        `);
+        log('DEBUG - Created attribute_value index');
 
         // Create test user if it doesn't exist
         log('DEBUG - Creating test user...');

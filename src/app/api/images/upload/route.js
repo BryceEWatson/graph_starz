@@ -18,16 +18,19 @@ export async function POST(request) {
     try {
         // Get user session
         const session = await getServerSession(authOptions);
-        log('Session data:', session);
+        log('Session data:', {
+            session,
+            providerId: session?.providerId
+        });
         
-        // Get user ID from session
-        const userId = session?.providerId || session?.user?.id;
-        log('Extracted userId:', userId);
+        // Get user ID from session (Google's sub/providerId)
+        const userId = session?.providerId;
+        log('Using userId:', userId);
         
         if (!userId) {
-            log('No user ID found in session');
+            log('No provider ID found in session');
             return NextResponse.json(
-                { error: 'Unauthorized: Missing user ID' },
+                { error: 'Unauthorized: Not authenticated' },
                 { status: 401 }
             );
         }
@@ -66,11 +69,12 @@ export async function POST(request) {
         const buffer = Buffer.from(arrayBuffer);
         
         try {
-            // Process image and get pHash
+            // Process image and get pHash first
+            log('Processing image and generating pHash...');
             const processedImage = await processImage(buffer, { contentType });
             const { pHash, width, height, images } = processedImage;
             
-            // Check for duplicates before proceeding with expensive operations
+            // Check for duplicates before any expensive operations
             log('Checking for duplicates with pHash:', pHash);
             const existingImageId = await findSimilarImage(pHash);
             if (existingImageId) {
@@ -82,65 +86,68 @@ export async function POST(request) {
                 }, { status: 409 }); // HTTP 409 Conflict
             }
 
-            // Analyze image with Anthropic using original buffer
-            log('Analyzing image...');
-            const analysis = await analyzeImage(buffer, contentType);
-
-            // Generate filenames using provided ID or title
-            const baseFilename = imageId || analysis.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-            const thumbnailFilename = `${baseFilename}-thumbnail.webp`;
-            const previewFilename = `${baseFilename}-preview.webp`;
-            const fullFilename = `${baseFilename}-full.webp`;
-
-            // Upload all sizes to GCS
-            log('Uploading images to GCS...');
-            const [thumbnailUpload, previewUpload, fullUpload] = await Promise.all([
-                uploadToGCS(images.thumbnail.data, thumbnailFilename),
-                uploadToGCS(images.preview.data, previewFilename),
-                // Convert base64 to buffer for full image
-                uploadToGCS(Buffer.from(images.full.data.split(',')[1], 'base64'), fullFilename)
-            ]);
-
-            if (!thumbnailUpload.isNew || !previewUpload.isNew || !fullUpload.isNew) {
+            // Get image analysis before uploading
+            log('Analyzing image...')
+            const analysis = await analyzeImage(buffer, contentType)
+            if (!analysis || !analysis.title) {
+                log('Analysis failed or returned no title:', analysis);
                 return NextResponse.json({
-                    error: 'Duplicate image detected',
-                    message: 'This image (or a very similar one) has already been uploaded.',
-                    existingUrl: fullUpload.url
+                    error: 'Analysis failed',
+                    message: 'No attributes could be extracted from the image. Please try again or use a different image.',
+                    analysis
+                }, { status: 422 }); // HTTP 422 Unprocessable Entity
+            }
+
+            // Upload full size image
+            const fullUpload = await uploadToGCS(
+                images.full.data,
+                generateImageFilename(analysis.title, 'full'),
+                contentType
+            );
+
+            // Upload preview size image
+            const previewUpload = await uploadToGCS(
+                images.preview.data,
+                generateImageFilename(analysis.title, 'preview'),
+                contentType
+            );
+
+            // Upload thumbnail
+            const thumbnailUpload = await uploadToGCS(
+                images.thumbnail.data,
+                generateImageFilename(analysis.title, 'thumbnail'),
+                contentType
+            );
+
+            // Check for duplicates
+            if (!fullUpload.isNew) {
+                return NextResponse.json({
+                    message: 'This image has already been uploaded.',
+                    existingImageId: fullUpload.fullUrl
                 }, { status: 409 }); // HTTP 409 Conflict
             }
 
-            // Save to Neo4j with all metadata
+            // Save image data to Neo4j
+            log('Saving image data to Neo4j with userId:', userId);
             const imageData = {
-                url: fullUpload.publicUrl,
-                thumbnailUrl: thumbnailUpload.publicUrl,
-                previewUrl: previewUpload.publicUrl,
+                id: imageId,
+                title: analysis.title,
+                description: analysis.description,
+                tags: analysis.tags,
                 width,
                 height,
                 pHash,
-                name: analysis.title,
-                description: analysis.description,
-                originalName: file.name,
-                contentType
+                fullUrl: fullUpload.fullUrl,     // Full size image
+                previewUrl: previewUpload.fullUrl,
+                thumbnailUrl: thumbnailUpload.fullUrl
             };
 
-            // Save to database
-            const _savedImage = await saveImageData(imageData, {
-                title: analysis.title,
-                description: analysis.description,
-                colors: analysis.dominantColors,
-                objects: analysis.objects,
-                styles: analysis.style
-            }, userId, imageId);
+            const savedImage = await saveImageData(imageData, analysis, userId);
+            log('Image data saved:', savedImage);
 
-            // Return success response with image data
             return NextResponse.json({
-                metadata: imageData,
-                analysis,
-                urls: {
-                    full: imageData.url,
-                    thumbnail: imageData.thumbnailUrl,
-                    preview: imageData.previewUrl
-                }
+                message: 'Upload successful',
+                image: savedImage
             });
 
         } catch (error) {
@@ -158,4 +165,9 @@ export async function POST(request) {
             { status: 500 }
         );
     }
+}
+
+function generateImageFilename(title, size) {
+    const baseFilename = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `${baseFilename}-${size}.webp`;
 }

@@ -50,9 +50,46 @@ export async function clearTestImages(testImageIds) {
 }
 
 /**
+ * Create an attribute relationship between an image and an attribute
+ * @param {Object} tx - Neo4j transaction
+ * @param {string} imageId - ID of the image
+ * @param {Object} attr - Attribute object with category, value, context, prominence, and reasoning
+ */
+async function createAttributeRelationship(tx, imageId, attr) {
+  try {
+    await tx.run(`
+      MERGE (a:Attribute {category: $category, value: $value})
+      WITH a
+      MATCH (i:Image {id: $imageId})
+      CREATE (i)-[:HAS_ATTRIBUTE {
+        context: $context,
+        prominence: $prominence,
+        reasoning: $reasoning,
+        timestamp: datetime()
+      }]->(a)
+    `, {
+      imageId,
+      category: attr.category,
+      value: normalizeAttribute(attr.value),
+      context: attr.context,
+      prominence: attr.prominence,
+      reasoning: attr.reasoning
+    });
+  } catch (error) {
+    log('Failed to create attribute relationship: %O', {
+      error: error.message,
+      code: error.code,
+      imageId,
+      attribute: attr
+    });
+    throw error;
+  }
+}
+
+/**
  * Save image data to Neo4j
  * @param {Object} imageData - Processed image data (url, thumbnailUrl, width, height, pHash)
- * @param {Object} analysis - Image analysis results (title, description, objects, colors, styles)
+ * @param {Object} analysis - Image analysis results from Claude
  * @param {string} userId - ID of the user uploading the image
  * @param {string} [fixedId] - Optional fixed ID for test images
  * @returns {Promise<{id: string, isDuplicate?: boolean}>}
@@ -95,16 +132,7 @@ export async function saveImageData(imageData, analysis, userId, fixedId = null)
     }
 
     // Create the image with its properties
-    const result = await session.executeWrite(async (tx) => {
-      log('Creating image node with properties: %O', {
-        imageId,
-        userId,
-        url: imageData.url,
-        thumbnailUrl: imageData.thumbnailUrl,
-        width: imageData.width,
-        height: imageData.height
-      });
-
+    await session.executeWrite(async (tx) => {
       // First verify the user exists
       const userCheck = await tx.run(`
         MATCH (u:User {id: $userId})
@@ -116,14 +144,15 @@ export async function saveImageData(imageData, analysis, userId, fixedId = null)
       }
 
       // Create the image
-      const imageResult = await tx.run(`
+      await tx.run(`
         MATCH (u:User {id: $userId})
         CREATE (i:Image {
           id: $imageId,
-          name: $name,
+          title: $title,
           description: $description,
-          url: $url,
-          thumbnailUrl: $thumbnailUrl,
+          fullUrl: $fullUrl,            // Full size image
+          previewUrl: $previewUrl,      // Medium size image
+          thumbnailUrl: $thumbnailUrl,  // Small size image
           pHash: $pHash,
           width: toInteger($width),
           height: toInteger($height),
@@ -131,117 +160,51 @@ export async function saveImageData(imageData, analysis, userId, fixedId = null)
           userId: $userId
         })
         CREATE (u)-[:UPLOADED]->(i)
-        RETURN i
       `, {
         imageId,
         userId,
-        name: imageData.name || '',
-        description: imageData.description || '',
-        url: imageData.url,
+        title: analysis.title || '',
+        description: analysis.description || '',
+        fullUrl: imageData.fullUrl,         // Use fullUrl consistently
+        previewUrl: imageData.previewUrl,
         thumbnailUrl: imageData.thumbnailUrl,
         pHash: imageData.pHash || null,
         width: imageData.width,
         height: imageData.height
       });
 
-      if (!imageResult.records[0]) {
-        log('Failed to create image node. Query result: %O', imageResult);
-        throw new Error('Failed to create image node - no records returned');
-      }
-
-      // Create relationships for colors
-      if (analysis.colors && analysis.colors.length > 0) {
-        log('Creating color relationships: %O', analysis.colors);
+      // Create attribute relationships
+      if (analysis.attributes && analysis.attributes.length > 0) {
+        log('Creating attribute relationships: %O', analysis.attributes);
         try {
-          for (const color of analysis.colors) {
-            const normalizedColor = normalizeAttribute(color);
-            if (!normalizedColor) continue;
-
-            await tx.run(`
-              MERGE (c:Color {name: $color})
-              WITH c
-              MATCH (i:Image {id: $imageId})
-              CREATE (i)-[:HAS_COLOR]->(c)
-            `, { color: normalizedColor, imageId });
+          for (const attr of analysis.attributes) {
+            await createAttributeRelationship(tx, imageId, attr);
           }
         } catch (error) {
-          log('Failed to create color relationships: %O', {
+          log('Failed to create attribute relationships: %O', {
             error: error.message,
             code: error.code,
-            colors: analysis.colors,
+            attributes: analysis.attributes,
             imageId
           });
           throw error;
         }
       }
-
-      // Create relationships for objects
-      if (analysis.objects && analysis.objects.length > 0) {
-        log('Creating object relationships: %O', analysis.objects);
-        try {
-          for (const object of analysis.objects) {
-            const normalizedObject = normalizeAttribute(object);
-            if (!normalizedObject) continue;
-
-            await tx.run(`
-              MERGE (o:Object {name: $object})
-              WITH o
-              MATCH (i:Image {id: $imageId})
-              CREATE (i)-[:CONTAINS]->(o)
-            `, { object: normalizedObject, imageId });
-          }
-        } catch (error) {
-          log('Failed to create object relationships: %O', {
-            error: error.message,
-            code: error.code,
-            objects: analysis.objects,
-            imageId
-          });
-          throw error;
-        }
-      }
-
-      // Create relationships for styles
-      if (analysis.styles && analysis.styles.length > 0) {
-        log('Creating style relationships: %O', analysis.styles);
-        try {
-          for (const style of analysis.styles) {
-            const normalizedStyle = normalizeAttribute(style);
-            if (!normalizedStyle) continue;
-
-            await tx.run(`
-              MERGE (s:Style {name: $style})
-              WITH s
-              MATCH (i:Image {id: $imageId})
-              CREATE (i)-[:HAS_STYLE]->(s)
-            `, { style: normalizedStyle, imageId });
-          }
-        } catch (error) {
-          log('Failed to create style relationships: %O', {
-            error: error.message,
-            code: error.code,
-            styles: analysis.styles,
-            imageId
-          });
-          throw error;
-        }
-      }
-
-      return imageResult;
     });
 
-    if (!result.records[0]) {
-      throw new Error('Failed to create image - transaction succeeded but no records returned');
-    }
+    log('Successfully saved image: %O', {
+      imageId,
+      userId,
+      attributeCount: analysis.attributes?.length || 0
+    });
 
-    log('Successfully saved image: %s', imageId);
     return { id: imageId };
   } catch (error) {
-    log('Error saving image: %O', {
+    log('Error in saveImageData: %O', {
       error: error.message,
-      stack: error.stack,
       code: error.code,
-      imageId: fixedId || 'new'
+      imageId: fixedId,
+      userId
     });
     throw error;
   } finally {
@@ -324,37 +287,77 @@ export async function getImageById(imageId) {
   const session = driver.session();
 
   try {
-    const result = await session.executeRead(async (tx) => {
-      const imageResult = await tx.run(`
-        MATCH (i:Image {id: $imageId})
-        OPTIONAL MATCH (i)-[:HAS_COLOR]->(c:Color)
-        OPTIONAL MATCH (i)-[:CONTAINS]->(o:Object)
-        OPTIONAL MATCH (i)-[:HAS_STYLE]->(s:Style)
-        RETURN i,
-               collect(DISTINCT c.name) as colors,
-               collect(DISTINCT o.name) as objects,
-               collect(DISTINCT s.name) as styles
-      `, { imageId });
+    const result = await session.run(`
+      MATCH (i:Image {id: $imageId})
+      OPTIONAL MATCH (i)<-[:UPLOADED]-(u:User)
+      OPTIONAL MATCH (i)-[r:HAS_ATTRIBUTE]->(a:Attribute)
+      WITH i, u, collect({
+        category: a.category,
+        value: a.value,
+        context: a.context,
+        prominence: a.prominence,
+        reasoning: a.reasoning
+      }) as attributes
+      RETURN {
+        id: i.id,
+        title: i.title,
+        description: i.description,
+        fullUrl: i.fullUrl,
+        previewUrl: i.previewUrl,
+        thumbnailUrl: i.thumbnailUrl,
+        width: i.width,
+        height: i.height,
+        pHash: i.pHash,
+        createdAt: i.createdAt,
+        userId: i.userId,
+        uploadedBy: {
+          id: u.id,
+          name: u.name,
+          email: u.email
+        },
+        attributes: attributes
+      } as image
+    `, { imageId });
 
-      if (!imageResult.records[0]) {
-        return null;
-      }
+    if (!result.records[0]) {
+      return null;
+    }
 
-      const record = imageResult.records[0];
-      const image = record.get('i').properties;
-      const colors = record.get('colors');
-      const objects = record.get('objects');
-      const styles = record.get('styles');
+    const image = result.records[0].get('image');
+    return {
+      ...image,
+      createdAt: image.createdAt ? new Date(image.createdAt) : null,
+      uploadedBy: image.uploadedBy?.id ? image.uploadedBy : null
+    };
+  } finally {
+    await session.close();
+  }
+}
 
-      return {
-        ...image,
-        colors,
-        objects,
-        styles
-      };
-    });
+/**
+ * Migrate existing attribute nodes to use 'category' instead of 'type'
+ * @returns {Promise<number>} Number of nodes updated
+ */
+export async function migrateAttributeNodes() {
+  const driver = await getDriver();
+  const session = driver.session();
 
-    return result;
+  try {
+    const result = await session.executeWrite(tx => tx.run(`
+      MATCH (a:Attribute)
+      WHERE a.type IS NOT NULL
+      WITH a, a.type as oldType
+      SET a.category = oldType
+      REMOVE a.type
+      RETURN count(a) as updated
+    `));
+
+    const updated = neo4j.integer.toNumber(result.records[0].get('updated'));
+    log(`Migrated ${updated} attribute nodes from 'type' to 'category'`);
+    return updated;
+  } catch (error) {
+    log('Error migrating attribute nodes:', error);
+    throw error;
   } finally {
     await session.close();
   }

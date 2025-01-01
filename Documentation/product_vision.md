@@ -24,7 +24,11 @@ Graph starz solves this problem by creating a graph-based image upload and shari
 
 ### Relationships
 - **UPLOADED**: Connects Users to Images, includes `timestamp`
-- **HAS_ATTRIBUTE**: Connects Images to Attributes, includes `confidence` and `timestamp`
+- **HAS_ATTRIBUTE**: Connects Images to Attributes, includes:
+  - `timestamp`: When the attribute was identified
+  - `context`: Description of where/how the attribute appears in this specific image
+  - `prominence`: Number between 0-1 indicating how prominent this attribute is in the image
+  - `reasoning`: Why this specific attribute was chosen for this image
 
 ## Features
 - **Image Upload**: Users can upload images to the platform and have advanced AI identify relevant attributes for each image.

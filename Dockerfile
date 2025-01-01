@@ -34,7 +34,7 @@ RUN if [ ! -d "./test_images" ]; then \
     fi
 
 # Build application
-RUN yarn build
+RUN yarn build:prod
 
 # Production stage
 FROM node:20-alpine

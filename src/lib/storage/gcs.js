@@ -1,10 +1,8 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
 import { Storage } from '@google-cloud/storage';
 import sharpPhash from 'sharp-phash';
 import { areSimilarImages, formatHash } from '../utils/imageHash.js';
 import { getGCSCredentials } from '../config/gcs.js';
 import debug from 'debug';
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 const log = debug('app:storage:gcs');
 
@@ -16,7 +14,7 @@ let bucket = null;
  * Initialize the Storage client if not already initialized
  * @returns {Promise<{storage: Storage, bucket: any}>}
  */
-export async function initializeStorage() {
+async function initializeStorage() {
   if (storage && bucket) {
     return { storage, bucket };
   }
@@ -96,39 +94,32 @@ async function calculateImageHash(buffer) {
 /**
  * Checks if a similar image already exists in the bucket
  * @param {string} hash - Perceptual hash of the image
- * @param {string} filename - The filename being uploaded
+ * @param {string} _filename - The filename being uploaded (unused)
  * @returns {Promise<string|null>} Existing file URL if found, null otherwise
  */
-async function findSimilarImage(hash, filename) {
-  if (!hash || hash.length !== 16) {
-    console.warn('Invalid hash format:', hash);
+async function findSimilarImage(hash, _filename) {
+  if (!hash) {
     return null;
   }
 
+  const { bucket } = await initializeStorage();
   const prefix = hash.substring(0, 4);
-  if (!/^[0-9a-f]{4}$/i.test(prefix)) {
-    console.warn('Invalid hash prefix:', prefix);
-    return null;
-  }
+  const prefixes = [prefix, ...getNeighboringPrefixes(prefix)];
 
-  // Update cache if needed
-  await updateHashPrefixCache();
+  for (const currentPrefix of prefixes) {
+    const [files] = await bucket.getFiles({
+      prefix: currentPrefix
+    });
 
-  // Get files with same or neighboring prefixes
-  const prefixes = getNeighboringPrefixes(prefix);
-  const candidates = [];
-  for (const p of prefixes) {
-    if (hashPrefixCache.has(p)) {
-      candidates.push(...hashPrefixCache.get(p));
-    }
-  }
+    for (const file of files) {
+      const [metadata] = await file.getMetadata();
+      const storedHash = metadata?.metadata?.pHash;
 
-  // Check each candidate for similarity
-  for (const candidate of candidates) {
-    if (candidate.name === filename) continue;
-    const distance = areSimilarImages(hash, candidate.hash);
-    if (distance <= SIMILARITY_THRESHOLD) {
-      return candidate.url;
+      if (storedHash && areSimilarImages(hash, storedHash)) {
+        const bucketName = bucket.name;
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(file.name)}?alt=media`;
+        return publicUrl;
+      }
     }
   }
 
@@ -160,9 +151,9 @@ function getNeighboringPrefixes(prefix) {
  * @param {Buffer|string} buffer - The buffer or base64 string to upload
  * @param {string} filename - The desired filename in storage
  * @param {string} contentType - The MIME type of the file
- * @returns {Promise<{url: string, publicUrl: string, isNew: boolean, similarity?: number}>}
+ * @returns {Promise<{fullUrl: string, isNew: boolean, similarity?: number}>}
  */
-export async function uploadToGCS(buffer, filename, contentType = 'image/webp') {
+async function uploadToGCS(buffer, filename, contentType = 'image/webp') {
   const { bucket } = await initializeStorage();
   
   if (!buffer) {
@@ -186,8 +177,7 @@ export async function uploadToGCS(buffer, filename, contentType = 'image/webp') 
   if (similarImageUrl) {
     log('Duplicate detected - returning existing image URL: %s', similarImageUrl);
     return {
-      url: similarImageUrl,
-      publicUrl: similarImageUrl,
+      fullUrl: similarImageUrl,
       isNew: false,
       similarity: SIMILARITY_THRESHOLD,
       hash
@@ -199,35 +189,45 @@ export async function uploadToGCS(buffer, filename, contentType = 'image/webp') 
   const [exists] = await file.exists();
   
   if (exists) {
-    throw new Error(`File ${filename} already exists`);
+    log('File already exists in bucket: %s', filename);
+    const bucketName = bucket.name;
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filename)}?alt=media`;
+    return {
+      fullUrl: publicUrl,
+      isNew: false
+    };
   }
 
-  // Upload the file
-  await file.save(buffer, {
-    metadata: {
-      contentType,
+  try {
+    await file.save(buffer, {
       metadata: {
-        phash: hash
+        contentType,
+        metadata: {
+          pHash: hash
+        }
       }
-    }
-  });
+    });
 
-  // Generate public URL
-  const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filename)}?alt=media`;
-  
-  return {
-    url: publicUrl,
-    publicUrl,
-    isNew: true,
-    hash
-  };
+    // Generate Firebase Storage URL
+    const bucketName = bucket.name;
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filename)}?alt=media`;
+    
+    return {
+      fullUrl: publicUrl,
+      isNew: true,
+      hash
+    };
+  } catch (error) {
+    log('Error uploading to GCS:', error);
+    throw error;
+  }
 }
 
 /**
  * Deletes all files from the bucket
  * @returns {Promise<void>}
  */
-export async function clearBucket() {
+async function clearBucket() {
   const { bucket } = await initializeStorage();
   const [files] = await bucket.getFiles();
   await Promise.all(files.map(file => file.delete()));
@@ -244,8 +244,73 @@ export async function clearBucket() {
  * @param {string} extension - The file extension (default: webp)
  * @returns {string}
  */
-export function generateImageFilename(title, size, extension = 'webp') {
+function generateImageFilename(title, size, extension = 'webp') {
   const timestamp = Date.now();
   const safeName = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   return `${safeName}-${size}-${timestamp}.${extension}`;
 }
+
+/**
+ * Deletes a file from GCS
+ * @param {string} filename - The name of the file to delete
+ * @returns {Promise<void>}
+ */
+async function deleteFromGCS(filename) {
+  const { bucket } = await initializeStorage();
+  const file = bucket.file(filename);
+  try {
+    await file.delete();
+    log('Deleted file:', filename);
+  } catch (error) {
+    log('Error deleting file:', error);
+    throw error;
+  }
+}
+
+/**
+ * Renames a file in GCS
+ * @param {string} oldFilename - The current filename
+ * @param {string} newFilename - The new filename
+ * @returns {Promise<string>} The new public URL
+ */
+async function renameInGCS(oldFilename, newFilename) {
+  if (!oldFilename || !newFilename) {
+    throw new Error('Both oldFilename and newFilename are required');
+  }
+
+  const { bucket } = await initializeStorage();
+  const file = bucket.file(oldFilename);
+  
+  try {
+    // Check if source file exists
+    const [exists] = await file.exists();
+    if (!exists) {
+      throw new Error(`Source file ${oldFilename} does not exist`);
+    }
+
+    // Check if destination already exists
+    const [destExists] = await bucket.file(newFilename).exists();
+    if (destExists) {
+      throw new Error(`Destination file ${newFilename} already exists`);
+    }
+
+    await file.move(newFilename);
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(newFilename)}?alt=media`;
+    log('Renamed file from', oldFilename, 'to', newFilename);
+    return publicUrl;
+  } catch (error) {
+    log('Error renaming file:', error);
+    throw error;
+  }
+}
+
+export {
+  initializeStorage,
+  findSimilarImage,
+  uploadToGCS,
+  clearBucket,
+  generateImageFilename,
+  deleteFromGCS,
+  renameInGCS,
+  updateHashPrefixCache
+};
