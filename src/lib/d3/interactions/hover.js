@@ -3,7 +3,6 @@
  */
 
 import * as d3 from 'd3';
-import { enterDetailsView } from './detailsView';
 
 // Node interaction states
 export const nodeStates = {
@@ -141,12 +140,13 @@ export function setupHoverInteractions(nodes, links) {
         });
 
         nodes.each(function(n) {
+            const thisNode = d3.select(this);
             if (this === d3.select(d.element).node()) {
-                applyNodeState(d3.select(this), 'highlighted');
+                applyNodeState(thisNode, 'highlighted');
             } else if (connectedNodes.has(n)) {
-                applyNodeState(d3.select(this), 'related');
+                applyNodeState(thisNode, 'related');
             } else {
-                applyNodeState(d3.select(this), 'faded');
+                applyNodeState(thisNode, 'faded');
             }
         });
     };
@@ -156,10 +156,9 @@ export function setupHoverInteractions(nodes, links) {
         // Skip hover effects if any node is selected
         if (selectedNode) return;
 
-        const node = d3.select(this);
         highlightConnections(d);
     })
-    .on('mouseout', function(event, d) {
+    .on('mouseout', function(_event, _d) {
         // Skip mouseout effects if any node is selected
         if (selectedNode) return;
 
@@ -178,12 +177,16 @@ export function setupHoverInteractions(nodes, links) {
 
         event.stopPropagation(); // Prevent background click
 
+        // Compare nodes directly using their data instead of DOM elements
+        const currentNode = d3.select(this);
+        const isCurrentSelected = selectedNode && d3.select(selectedNode).datum() === d;
+
         // If clicking the same node, do nothing
-        if (this === selectedNode) return;
+        if (isCurrentSelected) return;
 
         // If there's no selected node and we're clicking a new one
         if (!selectedNode) {
-            selectedNode = this;
+            selectedNode = currentNode.node();
             highlightConnections(d, 0.8);
             return;
         }
