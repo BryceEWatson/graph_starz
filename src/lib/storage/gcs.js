@@ -21,16 +21,49 @@ async function initializeStorage() {
 
     try {
         const config = getStorageConfig()
-        storage = new Storage({
-            projectId: config.projectId,
-            ...config.credentials
-        })
-
+        const isDev = process.env.NODE_ENV !== 'production'
+        
+        // In development, verify credentials file exists and is readable
+        if (isDev && config.keyFilename) {
+            try {
+                const fs = await import('fs/promises')
+                const stats = await fs.stat(config.keyFilename)
+                if (!stats.isFile()) {
+                    throw new Error(`Credentials path ${config.keyFilename} is not a file`)
+                }
+                const content = await fs.readFile(config.keyFilename, 'utf8')
+                try {
+                    JSON.parse(content)
+                    log('Successfully validated credentials file format')
+                } catch (e) {
+                    throw new Error(`Credentials file is not valid JSON: ${e.message}`)
+                }
+            } catch (e) {
+                log('Failed to validate credentials file:', e)
+                throw new Error(`Failed to validate credentials file: ${e.message}`)
+            }
+        } else if (isDev) {
+            throw new Error('GOOGLE_APPLICATION_CREDENTIALS environment variable must be set in development. In production, Cloud Run will use the service account automatically.')
+        } else {
+            log('Using Application Default Credentials in production')
+        }
+        
+        // In production, Storage will automatically use Application Default Credentials
+        storage = new Storage(config)
         bucket = storage.bucket(config.bucketName)
-        return { storage, bucket }
+        
+        // Verify we can access the bucket
+        try {
+            await bucket.exists()
+            log('Successfully verified bucket access')
+            return { storage, bucket }
+        } catch (e) {
+            log('Failed to verify bucket access:', e)
+            throw new Error(`Failed to verify bucket access: ${e.message}`)
+        }
     } catch (error) {
         log('Failed to initialize storage:', error)
-        throw new Error(`Failed to initialize storage: ${error.message}`)
+        throw error
     }
 }
 

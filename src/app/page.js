@@ -49,26 +49,10 @@ export default function Home() {
         return () => window.removeEventListener('refreshGraph', handleRefresh)
     }, [fetchGraphData])
 
-    // Debug logging
-    useEffect(() => {
-        console.log('Auth Debug:', {
-            authStatus,
-            session,
-            email: session?.user?.email,
-            whitelistStatus,
-            isCheckingWhitelist
-        })
-    }, [authStatus, session, whitelistStatus, isCheckingWhitelist])
-
     // Check whitelist status when user is authenticated
     useEffect(() => {
-        console.log('Whitelist Effect Running:', {
-            authStatus,
-            hasEmail: Boolean(session?.user?.email)
-        })
 
         if (authStatus === 'authenticated' && session?.user?.email) {
-            console.log('Checking whitelist for:', session.user.email)
             setIsCheckingWhitelist(true)
             fetch(`/api/auth/whitelist?email=${encodeURIComponent(session.user.email)}`)
                 .then(res => {
@@ -76,7 +60,6 @@ export default function Home() {
                     return res.json()
                 })
                 .then(data => {
-                    console.log('Whitelist response:', data)
                     setWhitelistStatus(data.isWhitelisted)
                     // Load graph data if whitelisted
                     if (data.isWhitelisted === true) {
@@ -99,14 +82,6 @@ export default function Home() {
         }
     }, [authStatus, session, fetchGraphData])
 
-    // Debug: Log before each render
-    console.log('Pre-render state:', {
-        authStatus,
-        isCheckingWhitelist,
-        whitelistStatus,
-        hasSession: Boolean(session)
-    })
-
     // Show initial loading state
     if (authStatus === 'loading') {
         return <LoadingSpinner />;
@@ -127,7 +102,6 @@ export default function Home() {
     }
 
     // Show early access or sign in states
-    console.log('Rendering main UI with authStatus:', authStatus)
     return (
         <div className={`flex min-h-screen items-center justify-center ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
             <div className={`max-w-md w-full space-y-8 p-8 rounded-xl shadow-lg ${isDark ? 'bg-gray-800' : 'bg-white'}`}>

@@ -101,7 +101,16 @@ Guidelines for attributes:
 For each attribute, explain:
 - Exactly where in the image this attribute appears
 - Why you chose this specific term over similar alternatives
-- How prominent or significant this element is (0-1 scale)`
+- How prominent or significant this element is (0-1 scale)
+
+For the description:
+1. Write at least 3-4 detailed sentences (aim for 300-500 characters)
+2. Start with the main subject and its key characteristics
+3. Describe the composition and how elements relate to each other
+4. Include details about the mood, lighting, and artistic techniques
+5. Mention any unique or subtle details that add depth to the image
+6. Use specific, evocative language that brings the image to life
+7. Consider both the technical and emotional aspects of the image`
         }]
       }],
       tools: [{
@@ -176,7 +185,8 @@ For each attribute, explain:
             },
             description: {
               type: 'string',
-              description: 'A detailed description of the image that captures its key visual elements and overall impact.'
+              description: 'A detailed description of the image that captures its key visual elements and overall impact. Keep the description between 200-300 characters for optimal display. Focus on the most striking and important elements rather than trying to describe everything.',
+              maxLength: 600
             }
           },
           required: ['attributes', 'title', 'description']
@@ -184,8 +194,6 @@ For each attribute, explain:
       }],
       tool_choice: { type: 'tool', name: 'extract_image_metadata' }
     });
-
-    console.log('Anthropic API Response:', JSON.stringify(message, null, 2));
 
     if (!message?.content?.[0]) {
       throw new Error('Empty or invalid response from Anthropic API');
@@ -279,7 +287,6 @@ For each attribute, explain:
     toolOutput.title = toolOutput.title || 'Untitled';
     toolOutput.description = toolOutput.description || '';
 
-    console.log('Extracted metadata:', JSON.stringify(toolOutput, null, 2));
     return toolOutput;
   } catch (error) {
     console.error('Error in analyzeImage:', error);

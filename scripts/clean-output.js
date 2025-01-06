@@ -6,7 +6,5 @@ process.stdin.on('data', (data) => {
 });
 
 process.stdin.on('end', () => {
-    console.log('TEST');
   const cleanOutput = output.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
-  console.log(cleanOutput);
 });

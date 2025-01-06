@@ -21,27 +21,29 @@ async function* walk(dir) {
 
 async function checkSyntax(file) {
   return new Promise((resolve, reject) => {
-    const swcPath = path.join(__dirname, '..', 'node_modules', '.bin', 'swc.cmd');
+    const isWindows = process.platform === 'win32'
+    const swcBinary = isWindows ? 'swc.cmd' : 'swc'
+    const swcPath = path.join(__dirname, '..', 'node_modules', '.bin', swcBinary)
     const swc = spawn(swcPath, [file], {
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: true
-    });
+    })
 
-    let stderr = '';
+    let stderr = ''
     swc.stderr.on('data', data => {
-      stderr += data;
-    });
+      stderr += data
+    })
 
     swc.on('close', code => {
       if (code !== 0) {
-        debug(`Syntax error in ${file}:\n${stderr}`);
-        reject(new Error(`Syntax error in ${file}:\n${stderr}`));
+        debug(`Syntax error in ${file}:\n${stderr}`)
+        reject(new Error(`Syntax error in ${file}:\n${stderr}`))
       } else {
-        debug(`✓ ${file}`);
-        resolve();
+        debug(`✓ ${file}`)
+        resolve()
       }
-    });
-  });
+    })
+  })
 }
 
 async function main() {

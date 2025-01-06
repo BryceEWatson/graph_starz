@@ -70,7 +70,20 @@ export async function POST(request) {
 
 export async function GET(request) {
     try {
+        log('Starting whitelist check...');
+        log('Environment variables:', {
+            NODE_ENV: process.env.NODE_ENV,
+            AUTO_WHITELISTED_EMAILS: process.env.AUTO_WHITELISTED_EMAILS,
+            hasAutoWhitelistEnv: !!process.env.AUTO_WHITELISTED_EMAILS
+        });
+
         const session = await getServerSession(authOptions);
+        log('Session retrieved:', { 
+            hasUser: !!session?.user,
+            email: session?.user?.email,
+            id: session?.user?.id
+        });
+
         if (!session?.user) {
             return NextResponse.json(
                 { error: 'Authentication required' },
@@ -80,23 +93,34 @@ export async function GET(request) {
 
         const { searchParams } = new URL(request.url);
         const email = searchParams.get('email');
+        log('Email from query:', email);
 
         if (!email || email !== session.user.email) {
+            log('Email mismatch or missing:', {
+                queryEmail: email,
+                sessionEmail: session.user.email
+            });
             return NextResponse.json(
                 { error: 'Invalid email' },
                 { status: 400 }
             );
         }
 
-        // For non-existent users, return isWhitelisted: null
-        // This helps differentiate between pending (false) and not requested (null)
+        log('Checking whitelist status for email:', email);
         const isWhitelisted = await isEmailWhitelisted(email);
+        log('Whitelist check result:', { isWhitelisted });
+        
         return NextResponse.json({ 
             isWhitelisted: isWhitelisted === false ? false : isWhitelisted || null 
         });
 
     } catch (error) {
-        log('Error checking whitelist status:', error);
+        log('Error checking whitelist status:', {
+            error: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        console.error('Detailed whitelist error:', error);
         return NextResponse.json(
             { error: 'Failed to check whitelist status' },
             { status: 500 }

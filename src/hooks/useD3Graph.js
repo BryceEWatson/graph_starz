@@ -39,29 +39,31 @@ export function useD3Graph(data) {
         const container = svgElement.append('g');
 
         // Set up the simulation and create graph elements with theme
-        const { simulation, nodes, links } = setupGraph(container, data, width, height, theme);
+        const graphElements = setupGraph(container, data, width, height, theme)
+        const { simulation, nodes, links, cleanup: graphCleanup } = graphElements
 
         // Set up interactions (drag, hover, etc.)
-        setupInteractions(nodes, links);
+        const interactionsCleanup = setupInteractions(nodes, links)
 
         // Update positions on each tick
         simulation.on('tick', () => {
-            if (!mounted) return;
+            if (!mounted) return
 
             links
                 .attr('x1', d => d.source.x)
                 .attr('y1', d => d.source.y)
                 .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
+                .attr('y2', d => d.target.y)
 
             nodes
-                .attr('transform', d => `translate(${d.x},${d.y})`);
-        });
+                .attr('transform', d => `translate(${d.x},${d.y})`)
+        })
 
         // Cleanup function
         return () => {
-            mounted = false;
-            simulation.stop();
+            mounted = false
+            if (graphCleanup) graphCleanup()
+            if (interactionsCleanup) interactionsCleanup()
         };
     }, [data, theme]);
 

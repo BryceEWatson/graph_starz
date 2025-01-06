@@ -46,7 +46,8 @@ export const initialize = async () => {
         log('Database configuration:', {
             uri: config.uri,
             user: config.user,
-            hasPassword: !!config.password
+            hasPassword: !!config.password,
+            environment: process.env.NODE_ENV
         });
         
         if (!config.uri || !config.user || !config.password) {
@@ -57,22 +58,34 @@ export const initialize = async () => {
             throw new Error(`Missing Neo4j configuration: ${missing.join(', ')}`);
         }
 
-        log('Creating Neo4j driver...');
-        driver = neo4j.driver(
-            config.uri,
-            neo4j.auth.basic(config.user, config.password),
-            { 
-                disableLosslessIntegers: true,
-                logging: {
-                    level: 'info',
-                    logger: (level, message) => log(`[${level}] ${message}`)
+        if (!driver) {
+            log('Creating new Neo4j driver instance...');
+            driver = neo4j.driver(
+                config.uri,
+                neo4j.auth.basic(config.user, config.password),
+                {
+                    maxConnectionPoolSize: 50,
+                    disableLosslessIntegers: true,
+                    logging: {
+                        level: process.env.NODE_ENV === 'development' ? 'info' : 'warn',
+                        logger: (level, message) => log(`[${level}] ${message}`)
+                    }
                 }
+            );
+            
+            // Verify connection works
+            const session = driver.session();
+            try {
+                await session.run('RETURN 1 as n');
+                log('Successfully connected to Neo4j');
+            } catch (error) {
+                log('Failed to connect to Neo4j:', error);
+                throw new Error(`Failed to connect to Neo4j: ${error.message}`);
+            } finally {
+                await session.close();
             }
-        );
+        }
 
-        // Test the connection
-        log('Testing connection...');
-        await validateConnection();
         log('Neo4j driver initialized successfully');
         
     } catch (error) {

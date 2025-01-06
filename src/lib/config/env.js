@@ -37,9 +37,13 @@ class ConfigurationError extends Error {
  * GOOGLE_CLIENT_SECRET=client-secret
  * NEXTAUTH_SECRET=secret
  * NEXTAUTH_URL=http://localhost:3000
+ * FRONTEND_URL=http://localhost:3000
  * 
  * # AI Services
  * ANTHROPIC_API_KEY=key
+ * 
+ * # Whitelist
+ * AUTO_WHITELISTED_EMAILS=email1@example.com,email2@example.com
  * 
  * # Application
  * DEBUG=app:*,-app:verbose:*
@@ -75,9 +79,13 @@ const REQUIRED_ENV_VARS = {
         { name: 'GOOGLE_CLIENT_SECRET', type: 'string', required: true },
         { name: 'NEXTAUTH_SECRET', type: 'string', required: true },
         { name: 'NEXTAUTH_URL', type: 'string', required: true, format: /^https?:\/\/.+/ },
+        { name: 'FRONTEND_URL', type: 'string', required: true, format: /^https?:\/\/.+/ },
         
         // AI Services
         { name: 'ANTHROPIC_API_KEY', type: 'string', required: true },
+
+        // Whitelist
+        { name: 'AUTO_WHITELISTED_EMAILS', type: 'string', required: false },
 
         // Application
         { name: 'DEBUG', type: 'string', required: false },
@@ -91,7 +99,7 @@ const REQUIRED_ENV_VARS = {
         
         // Google Cloud
         { name: 'GOOGLE_CLOUD_PROJECT', type: 'string', required: true },
-        { name: 'GOOGLE_APPLICATION_CREDENTIALS', type: 'string', required: true }, // JSON string validation handled in getStorageConfig
+        { name: 'GOOGLE_APPLICATION_CREDENTIALS', type: 'string', required: false }, // JSON string validation handled in getStorageConfig
         { name: 'GCS_BUCKET_NAME', type: 'string', required: true },
         
         // Authentication
@@ -99,9 +107,13 @@ const REQUIRED_ENV_VARS = {
         { name: 'GOOGLE_CLIENT_SECRET', type: 'string', required: true },
         { name: 'NEXTAUTH_SECRET', type: 'string', required: true },
         { name: 'NEXTAUTH_URL', type: 'string', required: true, format: /^https:\/\/.+/ }, // Require HTTPS in production
+        { name: 'FRONTEND_URL', type: 'string', required: true, format: /^https:\/\/.+/ }, // Require HTTPS in production
         
         // AI Services
         { name: 'ANTHROPIC_API_KEY', type: 'string', required: true },
+
+        // Whitelist
+        { name: 'AUTO_WHITELISTED_EMAILS', type: 'string', required: false },
 
         // Application
         { name: 'DEBUG', type: 'string', required: false },
@@ -255,58 +267,33 @@ function getDbConfig() {
  * Gets the storage configuration
  * @returns {Object} Storage configuration object
  * @property {string} projectId - Google Cloud project ID
- * @property {Object} credentials - GCS credentials object
+ * @property {string} [keyFilename] - Path to credentials file (development only)
  * @property {string} bucketName - GCS bucket name
  * @throws {ConfigurationError} If any required storage variables are missing
  */
 function getStorageConfig() {
-    try {
-        validateEnvConfig()
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT
+    const bucketName = process.env.GCS_BUCKET_NAME
+    const isDev = process.env.NODE_ENV === 'development'
+    
+    const config = {
+        projectId,
+        bucketName
+    }
 
-        const credentialsValue = process.env.GOOGLE_APPLICATION_CREDENTIALS
-        const isDevelopment = process.env.NODE_ENV === 'development'
-        let credentials
-
-        try {
-            if (isDevelopment) {
-                // In development, expect path to credentials file
-                if (!credentialsValue.endsWith('.json') && !credentialsValue.endsWith('.key')) {
-                    throw new Error('Development credentials must be a path to a .json or .key file')
-                }
-                credentials = { keyFilename: credentialsValue }
-            } else {
-                // In production, expect JSON string
-                if (!credentialsValue.startsWith('{')) {
-                    throw new Error('Production credentials must be a JSON string')
-                }
-                try {
-                    const parsedCreds = JSON.parse(credentialsValue)
-                    if (!parsedCreds.type) {
-                        throw new Error('Invalid GCS credentials format - missing required field: type')
-                    }
-                    credentials = parsedCreds
-                } catch (jsonError) {
-                    throw new Error(`Invalid GCS credentials JSON: ${jsonError.message}`)
-                }
-            }
-        } catch (error) {
+    // Only include keyFilename in development
+    if (isDev) {
+        const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS
+        if (!keyFilename) {
             throw new ConfigurationError(
-                `Invalid GCS credentials format: ${error.message}`,
+                'Missing required environment variable: GOOGLE_APPLICATION_CREDENTIALS',
                 'storage'
             )
         }
-
-        return {
-            projectId: process.env.GOOGLE_CLOUD_PROJECT,
-            credentials,
-            bucketName: process.env.GCS_BUCKET_NAME,
-        }
-    } catch (error) {
-        throw new ConfigurationError(
-            `Storage configuration error: ${error.message}`,
-            'storage'
-        )
+        config.keyFilename = keyFilename
     }
+
+    return config
 }
 
 /**
@@ -320,9 +307,23 @@ function getStorageConfig() {
 function getAuthConfig() {
     try {
         validateEnvConfig()
-        
+
         const isDevelopment = process.env.NODE_ENV === 'development'
-        
+        const frontendUrl = process.env.FRONTEND_URL
+        if (!frontendUrl) {
+            throw new Error('FRONTEND_URL is required for authentication')
+        }
+
+        // Validate and normalize frontend URL
+        try {
+            const url = new URL(frontendUrl)
+            if (!['http:', 'https:'].includes(url.protocol)) {
+                throw new Error('FRONTEND_URL must use http or https protocol')
+            }
+        } catch (error) {
+            throw new Error(`Invalid FRONTEND_URL: ${error.message}`)
+        }
+
         return {
             google: {
                 clientId: process.env.GOOGLE_CLIENT_ID,
@@ -330,18 +331,11 @@ function getAuthConfig() {
             },
             nextAuth: {
                 secret: process.env.NEXTAUTH_SECRET,
-                url: process.env.NEXTAUTH_URL,
+                url: frontendUrl, // Use the validated frontend URL
             },
             cookies: {
-                sessionToken: {
-                    name: isDevelopment ? 'next-auth.session-token' : '__Secure-next-auth.session-token',
-                    options: {
-                        httpOnly: true,
-                        sameSite: 'lax',
-                        path: '/',
-                        secure: !isDevelopment
-                    }
-                }
+                secure: !isDevelopment,
+                sameSite: isDevelopment ? 'lax' : 'strict',
             }
         }
     } catch (error) {
@@ -376,6 +370,37 @@ function getAIConfig() {
 }
 
 /**
+ * Gets the whitelist configuration
+ * @returns {Object} Whitelist configuration object
+ * @property {string[]} autoWhitelistedEmails - List of automatically whitelisted emails
+ */
+function getWhitelistConfig() {
+    const rawEmails = process.env.AUTO_WHITELISTED_EMAILS
+    log('Raw AUTO_WHITELISTED_EMAILS value: %s', rawEmails)
+    log('Environment:', {
+        NODE_ENV: process.env.NODE_ENV,
+        hasAutoWhitelistEnv: !!process.env.AUTO_WHITELISTED_EMAILS,
+        rawEmailsType: typeof rawEmails
+    })
+    
+    const emailList = rawEmails?.split(',').map(email => email.trim()) || []
+    log('Parsed email list: %o', emailList)
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const validEmails = emailList.filter(email => {
+        const isValid = emailRegex.test(email)
+        if (!isValid && email) {
+            log('Warning: Invalid email format in AUTO_WHITELISTED_EMAILS: %s', email)
+        }
+        return isValid
+    })
+    log('Valid emails: %o', validEmails)
+
+    return { autoWhitelistedEmails: validEmails }
+}
+
+/**
  * Gets all configuration for the current environment
  * @returns {Object} Complete configuration object
  * @property {string} environment - Current environment (development/production)
@@ -384,6 +409,7 @@ function getAIConfig() {
  * @property {Object} storage - Storage configuration
  * @property {Object} auth - Authentication configuration
  * @property {Object} ai - AI services configuration
+ * @property {Object} whitelist - Whitelist configuration
  * @property {boolean} isDevelopment - Whether running in development mode
  * @throws {ConfigurationError} If any configuration validation fails
  */
@@ -398,6 +424,7 @@ function getConfig() {
             storage: getStorageConfig(),
             auth: getAuthConfig(),
             ai: getAIConfig(),
+            whitelist: getWhitelistConfig(),
             isDevelopment: process.env.NODE_ENV === 'development',
         }
     } catch (error) {
@@ -415,5 +442,6 @@ export {
     getStorageConfig,
     getAuthConfig,
     getAIConfig,
+    getWhitelistConfig,
     getConfig,
 }

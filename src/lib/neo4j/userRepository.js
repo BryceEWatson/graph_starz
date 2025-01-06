@@ -1,4 +1,8 @@
 import { getDriver } from './client';
+import debug from 'debug';
+import { getWhitelistConfig } from '../config/env';
+
+const log = debug('app:neo4j:user');
 
 /**
  * Find a user by their ID
@@ -76,30 +80,74 @@ export async function createUser(userData) {
 }
 
 /**
- * Check if an email is whitelisted
+ * Check if an email is whitelisted and update database if auto-whitelisted
  * @param {string} email - The email to check
  * @returns {Promise<boolean|null>} Whether the email is whitelisted, null if user doesn't exist
  */
 export async function isEmailWhitelisted(email) {
-    const driver = await getDriver();
-    const session = driver.session();
-
+    log('Checking whitelist status for email:', email);
+    
     try {
-        const result = await session.run(
-            `
-            MATCH (u:User {email: $email})
-            RETURN u.isWhitelisted AS isWhitelisted
-            `,
-            { email }
-        );
+        // First check if email is in auto-whitelist
+        const whitelistConfig = getWhitelistConfig();
+        log('Whitelist config:', whitelistConfig);
+        
+        const { autoWhitelistedEmails = [] } = whitelistConfig;
+        const isAutoWhitelisted = autoWhitelistedEmails.includes(email);
+        log('Auto-whitelist check:', { email, isAutoWhitelisted, autoWhitelistedEmails });
 
-        if (result.records.length === 0) {
-            return null; // Return null for non-existent users
+        const driver = await getDriver();
+        const session = driver.session();
+
+        try {
+            const query = `
+                MATCH (u:User {email: $email})
+                ${isAutoWhitelisted ? 
+                    `SET u.isWhitelisted = true, 
+                         u.whitelistedAt = CASE WHEN u.whitelistedAt IS NULL THEN datetime() ELSE u.whitelistedAt END` 
+                    : ''}
+                RETURN u.isWhitelisted AS isWhitelisted
+            `;
+            log('Executing Neo4j query:', { query, params: { email } });
+
+            const result = await session.run(query, { email });
+            log('Query result:', { 
+                records: result.records.length,
+                firstRecord: result.records[0]?.get('isWhitelisted')
+            });
+
+            if (result.records.length === 0) {
+                log('No user found for email:', email);
+                return null; // Return null for non-existent users
+            }
+
+            // If auto-whitelisted, we know the database was just updated to true
+            if (isAutoWhitelisted) {
+                log('User is auto-whitelisted:', email);
+                return true;
+            }
+
+            const whitelistStatus = result.records[0].get('isWhitelisted') === true;
+            log('Final whitelist status:', { email, whitelistStatus });
+            return whitelistStatus;
+
+        } catch (dbError) {
+            log('Database error in isEmailWhitelisted:', {
+                error: dbError.message,
+                stack: dbError.stack,
+                code: dbError.code
+            });
+            throw dbError;
+        } finally {
+            await session.close();
         }
-
-        return result.records[0].get('isWhitelisted') === true;
-    } finally {
-        await session.close();
+    } catch (error) {
+        log('Error in isEmailWhitelisted:', {
+            error: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        throw error;
     }
 }
 
@@ -113,54 +161,53 @@ export async function isEmailWhitelisted(email) {
  * @returns {Promise<Object>} The whitelist request status
  */
 export async function requestWhitelistAccess(userData) {
-    const driver = await getDriver();
-    const session = driver.session();
+    const { autoWhitelistedEmails } = getWhitelistConfig()
+    const isAutoWhitelisted = autoWhitelistedEmails.includes(userData.email)
+    
+    const driver = await getDriver()
+    const session = driver.session()
 
     try {
-        // First check if user exists and is already whitelisted
-        const checkResult = await session.run(
-            `
-            MATCH (u:User {email: $email})
-            RETURN u.isWhitelisted as isWhitelisted
-            `,
-            { email: userData.email }
-        );
-
-        // If user exists and is whitelisted, return current status
-        if (checkResult.records.length > 0 && checkResult.records[0].get('isWhitelisted') === true) {
-            return { isWhitelisted: true };
-        }
-
-        // Create or update user with full profile data
+        // Create or update user with appropriate whitelist status
+        log('Creating/updating user %s with whitelist status: %s', userData.email, isAutoWhitelisted)
         const result = await session.run(
             `
-            MERGE (u:User {email: $email})
+            MERGE (u:User {id: $id})
             ON CREATE SET 
-                u.id = $id,
+                u.email = $email,
                 u.name = $name,
                 u.image = $image,
-                u.isWhitelisted = false,
+                u.isWhitelisted = $isWhitelisted,
+                u.whitelistedAt = CASE WHEN $isWhitelisted THEN datetime() ELSE null END,
                 u.createdAt = datetime()
             ON MATCH SET
+                u.email = $email,
                 u.name = $name,
-                u.image = $image
-                ${userData.id ? ', u.id = $id' : ''}
+                u.image = $image,
+                u.isWhitelisted = CASE 
+                    WHEN $isWhitelisted THEN true 
+                    WHEN u.isWhitelisted THEN true 
+                    ELSE false 
+                END,
+                u.whitelistedAt = CASE 
+                    WHEN $isWhitelisted AND u.whitelistedAt IS NULL THEN datetime()
+                    WHEN u.whitelistedAt IS NOT NULL THEN u.whitelistedAt
+                    ELSE null 
+                END
             RETURN u
             `,
-            {
-                id: userData.id || null,
-                email: userData.email,
-                name: userData.name,
-                image: userData.image || null
+            { 
+                ...userData,
+                isWhitelisted: isAutoWhitelisted
             }
-        );
+        )
 
-        const user = result.records[0].get('u').properties;
+        const user = result.records[0].get('u').properties
         return {
-            isWhitelisted: user.isWhitelisted || false,
+            isWhitelisted: user.isWhitelisted,
             user
-        };
+        }
     } finally {
-        await session.close();
+        await session.close()
     }
 }

@@ -21,7 +21,9 @@ Feature: Graph Visualization
     And image nodes should display their thumbnails using SVG patterns
     And the graph should be rendered using D3.js force-directed layout
     And the visualization should be responsive using client dimensions
+    And the background should adapt to the current theme
     # Force configuration in setupGraph.js:forceConfig
+    # Theme handling in GraphVisualization.jsx
 
   @implemented @file:src/lib/d3/setupGraph.js
   Scenario: Node Properties
@@ -32,7 +34,36 @@ Feature: Graph Visualization
       | User             | theme.userNode color                           |
       | Attribute        | theme.attributeNode color                      |
     And edge thickness should reflect relationship strength
+    And nodes should have proper contrast in both light and dark themes
+    And text labels should be clearly readable in both themes
     # Theme colors defined in setupGraph.js:setupGraph
+    # Theme states in hover.js:nodeStates
+
+  @implemented @file:src/lib/d3/interactions/hover.js @file:src/lib/d3/interactions/detailsView.js
+  Scenario: Node Selection and Details
+    Given I am viewing the graph visualization
+    When I hover over a node
+    Then I should see:
+      | Element           | State                                          |
+      | Node             | Highlighted with increased scale               |
+      | Connected Nodes  | Slightly highlighted                          |
+      | Other Nodes      | Faded                                         |
+      | Details Button   | Visible for image nodes                       |
+    When I click a node
+    Then it should maintain the highlighted state
+    And I should not be able to select another node without deselecting first
+    When I click the Details button
+    Then I should see a detailed view of the image with:
+      | Element           | Description                                    |
+      | Full Image       | High-resolution version                        |
+      | Title            | Image title                                    |
+      | Description      | Full image description                         |
+    And I should be able to exit the details view using:
+      | Method           | Implementation                                 |
+      | Escape Key       | document.addEventListener('keydown')          |
+      | Background Click | svg.on('dblclick.details')                    |
+    # Interaction states in hover.js:nodeStates
+    # Details view in detailsView.js:enterDetailsView
 
   @implemented @file:src/lib/d3/interactions.js
   Scenario: Interactive Navigation

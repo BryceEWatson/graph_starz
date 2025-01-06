@@ -2,7 +2,7 @@
 const neo4j = require('neo4j-driver')
 const debug = require('debug')
 const { Storage } = require('@google-cloud/storage')
-const { getConfig } = require('../config/env')
+const { getConfig } = require('../../../scripts/env.cjs')
 
 const log = debug('db:init:main')
 const errorLog = debug('db:init:error')
@@ -12,7 +12,7 @@ const errorLog = debug('db:init:error')
  * @returns {Promise<void>}
  */
 async function clearBucket() {
-    const config = getConfig()
+    const config = await getConfig()
     const { projectId, credentials, bucketName } = config.storage
 
     const storage = new Storage({
@@ -37,7 +37,7 @@ async function initializeDb() {
     
     try {
         log('Starting database initialization...')
-        const config = getConfig()
+        const config = await getConfig()
         log('Environment:', config.environment)
 
         // Clear GCS bucket
@@ -71,6 +71,13 @@ async function initializeDb() {
             if (name) {
                 await session.run(`DROP INDEX ${name}`)
             }
+        }
+
+        // Clear all data if CLEAR_DATA is true
+        if (process.env.CLEAR_DATA === 'true') {
+            log('Clearing all nodes and relationships...')
+            await session.run('MATCH (n) DETACH DELETE n')
+            log('Database cleared successfully')
         }
 
         // Create constraints
