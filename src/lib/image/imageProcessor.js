@@ -45,24 +45,24 @@ export async function processImage(input, { _filename = 'image.webp', _contentTy
 
   // Process image sizes
   const processedImages = await Promise.all([
-    // Thumbnail (100px width)
+    // Graph view size (160px width)
     sharp(imageBuffer)
-      .resize(100, null, { fit: 'inside', withoutEnlargement: true })
+      .resize(160, null, { fit: 'inside', withoutEnlargement: true })
       .webp()
       .toBuffer(),
-    // Preview (400px width)
+    // Preview size (400px width)
     sharp(imageBuffer)
       .resize(400, null, { fit: 'inside', withoutEnlargement: true })
       .webp()
       .toBuffer(),
-    // Full size (max 2048px width)
+    // Full size (2048px width max)
     sharp(imageBuffer)
       .resize(2048, null, { fit: 'inside', withoutEnlargement: true })
       .webp()
       .toBuffer()
   ]);
 
-  const [thumbnailBuffer, previewBuffer, fullBuffer] = processedImages;
+  const [graphBuffer, previewBuffer, fullBuffer] = processedImages;
 
   // Convert full size to base64 for AI analysis
   const fullBase64 = `data:image/webp;base64,${fullBuffer.toString('base64')}`;
@@ -72,10 +72,10 @@ export async function processImage(input, { _filename = 'image.webp', _contentTy
     width,
     height,
     images: {
-      thumbnail: {
-        data: thumbnailBuffer,
-        width: 100,
-        height: Math.round(height * (100 / width))
+      graphUrl: {
+        data: graphBuffer,
+        width: 160,
+        height: Math.round(height * (160 / width))
       },
       preview: {
         data: previewBuffer,

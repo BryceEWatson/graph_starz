@@ -52,6 +52,12 @@ export async function analyzeImage(imageData, mimeType = 'image/webp') {
       throw new Error('Invalid image data: Could not convert to Buffer');
     }
     
+    // Check size before sending to Claude API
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+    if (imageBuffer.length > MAX_FILE_SIZE) {
+      throw new Error(`Image exceeds maximum size of 5MB: ${imageBuffer.length} bytes > ${MAX_FILE_SIZE} bytes`);
+    }
+    
     // Convert to base64
     const base64Image = imageBuffer.toString('base64');
     

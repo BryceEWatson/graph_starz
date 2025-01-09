@@ -88,7 +88,7 @@ async function createAttributeRelationship(tx, imageId, attr) {
 
 /**
  * Save image data to Neo4j
- * @param {Object} imageData - Processed image data (url, thumbnailUrl, width, height, pHash)
+ * @param {Object} imageData - Processed image data (fullUrl, previewUrl, graphUrl, width, height, pHash)
  * @param {Object} analysis - Image analysis results from Claude
  * @param {string} userId - ID of the user uploading the image
  * @param {string} [fixedId] - Optional fixed ID for test images
@@ -152,7 +152,7 @@ export async function saveImageData(imageData, analysis, userId, fixedId = null)
           description: $description,
           fullUrl: $fullUrl,            // Full size image
           previewUrl: $previewUrl,      // Medium size image
-          thumbnailUrl: $thumbnailUrl,  // Small size image
+          graphUrl: $graphUrl,          // Graph view size (160px)
           pHash: $pHash,
           width: toInteger($width),
           height: toInteger($height),
@@ -165,9 +165,9 @@ export async function saveImageData(imageData, analysis, userId, fixedId = null)
         userId,
         title: analysis.title || '',
         description: analysis.description || '',
-        fullUrl: imageData.fullUrl,         // Use fullUrl consistently
+        fullUrl: imageData.fullUrl,
         previewUrl: imageData.previewUrl,
-        thumbnailUrl: imageData.thumbnailUrl,
+        graphUrl: imageData.graphUrl,
         pHash: imageData.pHash || null,
         width: imageData.width,
         height: imageData.height
@@ -304,7 +304,7 @@ export async function getImageById(imageId) {
         description: i.description,
         fullUrl: i.fullUrl,
         previewUrl: i.previewUrl,
-        thumbnailUrl: i.thumbnailUrl,
+        graphUrl: i.graphUrl,
         width: i.width,
         height: i.height,
         pHash: i.pHash,

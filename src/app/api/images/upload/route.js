@@ -63,6 +63,17 @@ export async function POST(request) {
         // Get content type from file
         const contentType = file.type || 'image/webp';
 
+        // Check file size before processing (5MB limit for Claude API)
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+        if (file.size > MAX_FILE_SIZE) {
+            return NextResponse.json({
+                error: 'File too large',
+                message: 'Image size exceeds the maximum limit of 5MB. Please resize the image or choose a smaller one.',
+                size: file.size,
+                maxSize: MAX_FILE_SIZE
+            }, { status: 413 }); // HTTP 413 Payload Too Large
+        }
+
         // Process image into different sizes and get pHash first
         log('Processing image and generating pHash...');
         const arrayBuffer = await file.arrayBuffer();
@@ -112,10 +123,10 @@ export async function POST(request) {
                 contentType
             );
 
-            // Upload thumbnail
-            const thumbnailUpload = await uploadToGCS(
-                images.thumbnail.data,
-                generateImageFilename(analysis.title, 'thumbnail'),
+            // Upload graph view size image
+            const graphUpload = await uploadToGCS(
+                images.graphUrl.data,
+                generateImageFilename(analysis.title, 'graphUrl'),
                 contentType
             );
 
@@ -139,7 +150,7 @@ export async function POST(request) {
                 pHash,
                 fullUrl: fullUpload.fullUrl,     // Full size image
                 previewUrl: previewUpload.fullUrl,
-                thumbnailUrl: thumbnailUpload.fullUrl
+                graphUrl: graphUpload.fullUrl    // Graph view size (160px)
             };
 
             const savedImage = await saveImageData(imageData, analysis, userId);

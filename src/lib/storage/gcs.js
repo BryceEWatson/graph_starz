@@ -271,7 +271,7 @@ async function clearBucket() {
 /**
  * Generates a unique filename for an image
  * @param {string} title - The AI-generated title of the image
- * @param {string} size - The size variant of the image (thumbnail, preview, full)
+ * @param {string} size - The size variant of the image (graphUrl, preview, full)
  * @param {string} extension - The file extension (default: webp)
  * @returns {string}
  */

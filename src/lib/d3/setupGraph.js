@@ -1,6 +1,10 @@
 import * as d3 from 'd3';
 import { setupHoverInteractions, resetAll } from './interactions/hover';
 import { setupDetailsViewInteractions, enterDetailsView } from './interactions/detailsView';
+import { calculateSpiralPositions, createSpiralForce } from './layouts/spiralLayout'
+import { calculateBoundingCircles, createBoundingCircleForce, renderBoundingCircles } from './layouts/boundingCircles'
+import { setupAttributeForces } from './layouts/attributeLayout'
+import { setupEdgeBundling, updateBundledPaths } from './interactions/edgeBundling'
 
 // Configuration for force variations
 const forceConfig = {
@@ -105,7 +109,7 @@ export function setupGraph(svgElement, data, width, height, theme) {
     // Node size configurations
     const nodeSizes = {
         user: 60,  // 60px diameter for users
-        image: { width: 160, height: 120 },  // Max dimensions for images
+        image: { width: 160 },  // Width only, height will maintain aspect ratio
         attribute: 30  // 30px diameter for attributes
     };
 
@@ -154,9 +158,8 @@ export function setupGraph(svgElement, data, width, height, theme) {
         d.element = this;  // Store element reference
 
         if (d.type === 'image') {
-            // For image nodes - use previewUrl for graph visualization
-            // as it's the medium-sized image, which is best for the graph
-            const imageUrl = d.properties?.previewUrl || d.properties?.fullUrl || d.properties?.thumbnailUrl;
+            // For image nodes - use graphUrl (160px) for graph visualization
+            const imageUrl = d.properties?.graphUrl || d.properties?.thumbnailUrl || d.properties?.previewUrl;
             node.append('image')
                 .attr('xlink:href', imageUrl || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIi8+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiLz48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIi8+PC9zdmc+')
                 .attr('width', d.properties?.size || 150)
@@ -312,96 +315,175 @@ export function setupGraph(svgElement, data, width, height, theme) {
         }
     });
 
-    // Initialize force simulation with attribute relationship handling
+    // Initialize force simulation with minimal forces first
     const simulation = d3.forceSimulation(data.nodes)
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('charge', d3.forceManyBody().strength(node => {
+            switch (node.type) {
+                case 'image': return -1000
+                case 'user': return -600
+                case 'attribute': return -400
+                default: return -200
+            }
+        }))
+        .force('collide', d3.forceCollide()
+            .radius(d => {
+                if (d.type === 'image') {
+                    return 140
+                } else if (d.type === 'user') {
+                    return 70
+                } else {
+                    return 40
+                }
+            })
+            .strength(1.0)
+            .iterations(4))
+        .velocityDecay(0.4)
+
+    // Run a few ticks to establish initial user positions
+    for (let i = 0; i < 20; i++) {
+        simulation.tick()
+    }
+
+    // Now position user images in spirals
+    const userNodes = data.nodes.filter(n => n.type === 'user')
+    userNodes.forEach(user => {
+        const userImages = data.nodes.filter(n => 
+            n.type === 'image' && 
+            data.links.some(l => 
+                (l.source.id === user.id && l.target.id === n.id) ||
+                (l.target.id === user.id && l.source.id === n.id)
+            )
+        )
+        
+        // Calculate spiral positions for this user's images
+        const { maxRadius, imagePositions } = calculateSpiralPositions(user, userImages)
+        
+        // Apply initial positions
+        imagePositions.forEach(pos => {
+            const node = data.nodes.find(n => n.id === pos.id)
+            if (node) {
+                node.x = pos.x
+                node.y = pos.y
+                node.spiralParams = {
+                    theta: pos.theta,
+                    radius: pos.radius,
+                    userNodeId: user.id
+                }
+            }
+        })
+    })
+
+    // Calculate the maximum extent of all user subgraphs
+    const subgraphExtents = userNodes.map(user => {
+        const userImages = data.nodes.filter(n => 
+            n.type === 'image' && 
+            n.spiralParams?.userNodeId === user.id
+        )
+        const imageWidth = 160
+        const maxRadius = Math.max(
+            300,
+            ...userImages.map(img => img.spiralParams?.radius || 0)
+        )
+        return maxRadius + (imageWidth / 2) + 50 // Include image width and padding
+    })
+    const maxSubgraphExtent = Math.max(...subgraphExtents)
+
+    // Position attributes well outside all subgraphs
+    const attrNodes = data.nodes.filter(n => n.type === 'attribute')
+    const attributeRadius = maxSubgraphExtent + 200 // Extra 200px buffer
+    attrNodes.forEach((node, i) => {
+        const angle = (2 * Math.PI * i) / attrNodes.length
+        node.x = width/2 + attributeRadius * Math.cos(angle)
+        node.y = height/2 + attributeRadius * Math.sin(angle)
+    })
+
+    // Now set up the full simulation with all forces
+    simulation
+        .nodes(data.nodes)
         .force('link', d3.forceLink(data.links)
             .id(d => d.id)
             .distance(link => {
-                const sourceType = link.source.type;
-                const targetType = link.target.type;
-                
-                // Adjust distances for attribute relationships
-                if (link.type === 'HAS_ATTRIBUTE') {
-                    const prominence = link.properties?.prominence || 0.5;
-                    return forceConfig.distance.attribute * (2 - prominence); // Closer for high prominence
-                }
-                
-                // Use pre-computed variations with node-type specific base distances
-                const key = `${sourceType}${targetType}`;
-                const variation = typeVariations[key].distance;
+                const sourceType = link.source.type
+                const targetType = link.target.type
+                const key = `${sourceType}${targetType}`
+                const variation = typeVariations[key].distance
                 
                 if (sourceType === 'image' || targetType === 'image') {
-                    return forceConfig.distance.image * variation;
+                    return forceConfig.distance.image * variation
                 } else if (sourceType === 'user' || targetType === 'user') {
-                    return forceConfig.distance.user * variation;
+                    return forceConfig.distance.user * variation
                 } else {
-                    return forceConfig.distance.attribute * variation;
-                }
-            })
-            .strength(link => {
-                // Stronger connections for high-prominence attributes
-                if (link.type === 'HAS_ATTRIBUTE') {
-                    return (link.properties?.prominence || 0.5) * forceConfig.strength.default;
-                }
-                
-                const sourceType = link.source.type;
-                const targetType = link.target.type;
-                const key = `${sourceType}${targetType}`;
-                const variation = typeVariations[key].strength;
-                
-                if (sourceType === targetType) {
-                    return forceConfig.strength.sameType * variation;
-                } else if ((sourceType === 'user' && targetType === 'image') ||
-                         (sourceType === 'image' && targetType === 'user')) {
-                    return forceConfig.strength.userImage * variation;
-                } else {
-                    return forceConfig.strength.default * variation;
+                    return forceConfig.distance.attribute * variation
                 }
             }))
         .force('charge', d3.forceManyBody()
             .strength(node => {
-                // Set repulsion force based on node type
                 switch (node.type) {
-                    case 'image':
-                        return -800; // Increased from -500 for stronger repulsion
-                    case 'user':
-                        return -400; // Increased from -300
-                    default:
-                        return -200; // Increased from -100
+                    case 'image': return -800
+                    case 'user': return -400
+                    default: return -200
                 }
             })
-            .distanceMax(800)    // Increased from 500
-            .distanceMin(100))   // Increased from 50
-        .force('center', d3.forceCenter(width / 2, height / 2))
+            .distanceMax(800)
+            .distanceMin(100))
         .force('collide', d3.forceCollide()
             .radius(d => {
-                // Set collision radius based on node type
                 if (d.type === 'image') {
-                    return 120;  // Increased from 90
+                    return 120
                 } else if (d.type === 'user') {
-                    return 50;   // Increased from 40
+                    return 50
                 } else {
-                    return 30;   // Increased from 20
+                    return 30
                 }
             })
-            .strength(0.8)      // Increased from 0.7
-            .iterations(3))     // Increased from 2
-        .alpha(0.3)
-        .alphaDecay(0.01)      // Reduced from 0.02 for slower cooling
-        .alphaTarget(0.05)
-        .velocityDecay(0.4);   // Increased from 0.3 for more stability
+            .strength(0.8)
+            .iterations(3))
+
+    // Add spiral force to maintain layout
+    simulation.force('spiral', createSpiralForce())
+
+    // Setup attribute forces
+    setupAttributeForces(simulation, data.nodes, data.links)
+
+    // Create container for bounding circles
+    const boundingCircleContainer = container.append('g')
+        .attr('class', 'bounding-circles')
+        .lower()
+
+    // Reset simulation
+    simulation
+        .alpha(1)
+        .alphaDecay(0.02) // Faster decay (was 0.01)
+        .alphaTarget(0) // Allow simulation to settle (was 0.05)
+        .restart()
 
     // Update function for force simulation
     simulation.on('tick', () => {
+        // Calculate and update bounding circles
+        const boundingCircles = calculateBoundingCircles(data.nodes, 
+            data.nodes.filter(n => n.type === 'image' && n.spiralParams)
+                .map(n => ({
+                    id: n.id,
+                    x: n.x,
+                    y: n.y,
+                    radius: n.spiralParams.radius
+                }))
+        )
+        
+        // Render bounding circles
+        renderBoundingCircles(boundingCircleContainer, boundingCircles, theme)
+
         // Update visual elements
         links
             .attr('x1', d => d.source.x)
             .attr('y1', d => d.source.y)
             .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
+            .attr('y2', d => d.target.y)
 
-        nodes.attr('transform', d => `translate(${d.x},${d.y}) scale(1)`);
-    });
+        nodes
+            .attr('transform', d => `translate(${d.x},${d.y})`)
+    })
 
     // Update node appearance on selection
     function updateNodeSelection(node) {

@@ -8,7 +8,7 @@ import { formatHash } from '../../../../lib/utils/imageHash.js';
 export const runtime = 'nodejs';
 
 const SIZES = {
-  thumbnail: 100,
+  graphUrl: 160,
   preview: 400,
   full: 2048
 };
