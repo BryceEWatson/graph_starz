@@ -28,6 +28,8 @@ export class NodeInteractionManager {
         });
         this.selectedNodes = new Set();
         this.cleanup = null;
+        this.nodes = null;
+        this.links = null;
     }
 
     /**
@@ -245,6 +247,37 @@ export class NodeInteractionManager {
     }
 
     /**
+     * Cleans up all resources and event handlers
+     * @private
+     */
+    cleanupResources() {
+        if (!this.nodes || !this.links) return;
+
+        // Remove all event listeners
+        this.nodes
+            .on('mouseover', null)
+            .on('mouseout', null)
+            .on('click', null)
+            .on('touchstart', null)
+            .on('touchend', null);
+
+        // Clear selection state
+        this.selectedNodes.clear();
+        this.nodes.classed('selected', false);
+
+        // Reset visual state
+        this.transitions.updateOpacity(this.nodes, this.config.opacity.default);
+        this.transitions.updateScale(this.nodes, 1);
+        this.transitions.updateOpacity(this.links, this.config.opacity.default);
+        this.transitions.updateStrokeWidth(this.links, 1);
+
+        // Clear references
+        this.nodes = null;
+        this.links = null;
+        this.cleanup = null;
+    }
+
+    /**
      * Attaches event handlers to nodes
      * @param {d3.Selection} nodes - Nodes to handle
      * @param {d3.Selection} links - Links for highlighting
@@ -254,16 +287,117 @@ export class NodeInteractionManager {
         this.validateNodes(nodes);
         this.validateNodes(links);
 
+        // Store references for cleanup
+        this.nodes = nodes;
+        this.links = links;
+
         this.handleHover(nodes, links);
         this.handleSelection(nodes, links);
+        this.handleTouchEvents(nodes, links);
 
         // Store cleanup function
-        this.cleanup = () => {
-            nodes.on('mouseover', null)
-                .on('mouseout', null)
-                .on('click', null);
+        this.cleanup = () => this.cleanupResources();
+    }
+
+    /**
+     * Handles touch events for mobile interaction
+     * @param {d3.Selection} nodes - Node selection to handle
+     * @param {d3.Selection} links - Link selection for highlighting
+     * @private
+     */
+    handleTouchEvents(nodes, links) {
+        let touchTimeout;
+        const touchDelay = 500; // ms to wait for second touch
+
+        nodes.on('touchstart', (event) => {
+            event.preventDefault();
+            const touch = event.touches[0];
+            const node = d3.select(event.currentTarget);
+
+            if (!touchTimeout) {
+                touchTimeout = setTimeout(() => {
+                    // Single tap
+                    this.handleNodeClick(event, node.datum());
+                    touchTimeout = null;
+                }, touchDelay);
+            } else {
+                // Double tap
+                clearTimeout(touchTimeout);
+                touchTimeout = null;
+                this.handleNodeDoubleClick(event, node.datum());
+            }
+        });
+
+        nodes.on('touchend', (event) => {
+            event.preventDefault();
+        });
+    }
+
+    /**
+     * Handles node click events
+     * @param {Event} event - Click event
+     * @param {Object} d - Node data
+     * @private
+     */
+    handleNodeClick(event, d) {
+        const node = d3.select(event.currentTarget);
+        const wasSelected = this.selectedNodes.has(d.id);
+
+        if (!event.shiftKey) {
+            // Clear other selections
             this.selectedNodes.clear();
-        };
+            this.nodes.classed('selected', false);
+            this.transitions.updateOpacity(this.nodes, this.config.opacity.default);
+        }
+
+        if (!wasSelected) {
+            // Add new selection
+            this.selectedNodes.add(d.id);
+            node.classed('selected', true);
+            this.transitions.updateScale(node, 1.1);
+            this.transitions.updateOpacity(node, this.config.opacity.selected);
+
+            // Fade other nodes
+            this.nodes.filter(n => !this.selectedNodes.has(n.id))
+                .call(selection => {
+                    this.transitions.updateOpacity(selection, this.config.opacity.faded);
+                });
+
+            // Highlight connected links
+            this.links.call(selection => {
+                this.transitions.updateOpacity(
+                    selection,
+                    linkData => (
+                        linkData.source.id === d.id || linkData.target.id === d.id
+                            ? this.config.opacity.selected
+                            : this.config.opacity.faded
+                    )
+                );
+            });
+        } else {
+            // Remove selection
+            this.selectedNodes.delete(d.id);
+            node.classed('selected', false);
+            this.transitions.updateScale(node, 1);
+            this.transitions.updateOpacity(node, this.config.opacity.default);
+
+            if (this.selectedNodes.size === 0) {
+                // Reset all elements if no selections remain
+                this.resetAll(this.nodes, this.links);
+            }
+        }
+    }
+
+    /**
+     * Handles node double-click events
+     * @param {Event} event - Double click event
+     * @param {Object} d - Node data
+     * @private
+     */
+    handleNodeDoubleClick(event, d) {
+        // Reset all selections
+        this.selectedNodes.clear();
+        this.resetAll(this.nodes, this.links);
     }
 
     /**

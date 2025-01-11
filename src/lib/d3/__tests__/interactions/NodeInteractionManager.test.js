@@ -208,4 +208,102 @@ describe('NodeInteractionManager', () => {
             expect(mockNodes.classed).toHaveBeenCalledWith('selected', false);
         });
     });
+
+    describe('Touch Event Handling', () => {
+        let manager;
+        let mockEvent;
+
+        beforeEach(() => {
+            manager = new NodeInteractionManager(validConfig);
+            mockEvent = {
+                preventDefault: jest.fn(),
+                currentTarget: document.createElement('div'),
+                touches: [{ clientX: 100, clientY: 100 }]
+            };
+        });
+
+        test('handles single tap', () => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            
+            // Get touch handler
+            const [[, touchHandler]] = mockNodes.on.mock.calls
+                .filter(([event]) => event === 'touchstart');
+            
+            // Simulate touch
+            touchHandler(mockEvent);
+            
+            expect(mockEvent.preventDefault).toHaveBeenCalled();
+            expect(mockNodes.classed).toHaveBeenCalled();
+        });
+
+        test('handles double tap', (done) => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            
+            // Get touch handler
+            const [[, touchHandler]] = mockNodes.on.mock.calls
+                .filter(([event]) => event === 'touchstart');
+            
+            // Simulate double tap
+            touchHandler(mockEvent);
+            touchHandler(mockEvent);
+            
+            expect(mockEvent.preventDefault).toHaveBeenCalledTimes(2);
+            done();
+        });
+
+        test('prevents default on touchend', () => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            
+            // Get touchend handler
+            const [[, touchEndHandler]] = mockNodes.on.mock.calls
+                .filter(([event]) => event === 'touchend');
+            
+            // Simulate touch end
+            touchEndHandler(mockEvent);
+            
+            expect(mockEvent.preventDefault).toHaveBeenCalled();
+        });
+    });
+
+    describe('Resource Cleanup', () => {
+        let manager;
+
+        beforeEach(() => {
+            manager = new NodeInteractionManager(validConfig);
+        });
+
+        test('removes all event handlers', () => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            manager.removeEventHandlers();
+            
+            expect(mockNodes.on).toHaveBeenCalledWith('mouseover', null);
+            expect(mockNodes.on).toHaveBeenCalledWith('mouseout', null);
+            expect(mockNodes.on).toHaveBeenCalledWith('click', null);
+            expect(mockNodes.on).toHaveBeenCalledWith('touchstart', null);
+            expect(mockNodes.on).toHaveBeenCalledWith('touchend', null);
+        });
+
+        test('resets visual state', () => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            manager.removeEventHandlers();
+            
+            expect(mockNodes.classed).toHaveBeenCalledWith('selected', false);
+            expect(mockNodes.call).toHaveBeenCalled();
+            expect(mockLinks.call).toHaveBeenCalled();
+        });
+
+        test('clears internal state', () => {
+            manager.attachEventHandlers(mockNodes, mockLinks);
+            manager.removeEventHandlers();
+            
+            expect(manager.nodes).toBeNull();
+            expect(manager.links).toBeNull();
+            expect(manager.cleanup).toBeNull();
+            expect(manager.selectedNodes.size).toBe(0);
+        });
+
+        test('handles cleanup when no handlers attached', () => {
+            expect(() => manager.removeEventHandlers()).not.toThrow();
+        });
+    });
 });

@@ -1,6 +1,6 @@
 name: Graph Starz LLM Coding Guidelines
 description: Concise coding guidelines for LLM code generation.
-version: 1.5.2
+version: 1.6.0
 last_updated: "2025-01-11"
 
 general_principles:
@@ -27,13 +27,16 @@ general_principles:
     - id: ValidateEnv
       description: Validate env variables at startup.
       how_to: Check type/format; error if absent.
+    - id: SelfReview
+      description: Critically analyze your own work; do not make assumptions.
+      how_to: Test and verify all code and assumptions; Do not assume correctness.
 
 testing:
   description: TDD rules.
   rules:
     - id: TestFirst
       description: Write tests before code.
-      how_to: Define test cases (normal, edge, error) first.
+      how_to: Define all test cases (normal, edge, error) first.
     - id: TestImpl
       description: Minimal code to pass tests.
       how_to: Write only necessary code.
@@ -43,6 +46,9 @@ testing:
     - id: JestMocking
       description: Use Jest mocking; reuse mocks.
       how_to: Use `d3Mock.js` for d3; ensure chaining.
+    - id: TestProve
+      description: Tests must prove code works as intended.
+      how_to: Tests must cover all cases, edge cases, and verify behavior.
 
 code_style:
   description: Code formatting.
@@ -100,14 +106,17 @@ documentation:
       description: Accurate documentation.
       how_to: Docs must reflect current code.
     - id: FeatureCodeAlign
-      description: Feature files match code.
-      how_to: Feature files must match implementation.
+      description: Feature files must match code.
+      how_to: Ensure feature files match implementation.
+    - id: DocComplete
+      description: Documentation must be complete and clear.
+      how_to: READMEs, code comments, JSDoc; explain everything.
 
 feature_integration:
   description: Feature integration rules.
   rules:
       - id: APIConsistency
-        description: Consistent APIs/data.
+        description: Maintain consistent APIs/data.
         how_to: Follow existing API patterns.
       - id: ComponentDeps
         description: Update tests for component changes.
@@ -116,7 +125,7 @@ feature_integration:
         description: Follow arch patterns.
         how_to: Follow existing arch; maintain separation.
       - id: DataConsistency
-        description: Consistent data.
+        description: Use consistent data.
         how_to: Document schemas; validate data.
 
 research_questions:
@@ -167,9 +176,10 @@ test_driven_development:
     - Edge cases.
     - Error handling.
   workflow:
-    - Write tests.
-    - Write code to pass.
-    - Refactor with passing tests.
+    - Write specific test cases.
+    - Write tests before code.
+    - Implement minimum code.
+    - Refactor while passing tests.
     - Run all tests.
   documentation:
     - Document tests.

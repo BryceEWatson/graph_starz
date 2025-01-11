@@ -66,6 +66,56 @@ All managers implement comprehensive error handling:
 - Missing data handling
 - Event cleanup on errors
 
+## Touch Support
+
+The interaction managers support touch events for mobile devices:
+
+### Single Tap
+- Select/deselect nodes
+- Show node details
+- Highlight connected nodes and links
+
+### Double Tap
+- Reset selection state
+- Return to overview
+
+Example touch handling:
+```javascript
+const manager = new NodeInteractionManager({
+    hoverDuration: 200,
+    selectionDuration: 300,
+    opacity: {
+        default: 0.6,
+        hover: 0.8,
+        selected: 1.0,
+        faded: 0.3
+    }
+});
+
+// Touch events are automatically handled
+manager.attachEventHandlers(nodes, links);
+```
+
+## Resource Management
+
+The interaction managers implement thorough resource cleanup:
+
+### Event Handlers
+- All event listeners are properly removed
+- Touch event handlers are cleaned up
+- Selection state is reset
+
+### Visual State
+- Node opacity is reset
+- Link highlighting is cleared
+- Transitions are completed
+
+Example cleanup:
+```javascript
+// Clean up when done
+manager.removeEventHandlers();
+```
+
 ## Development Guidelines
 1. Always cleanup event listeners
 2. Use consistent transition timings
