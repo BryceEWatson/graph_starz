@@ -345,3 +345,90 @@ describe('D3 Mock Integration', () => {
         });
     });
 });
+
+describe('Force Configuration Tests', () => {
+    let container;
+    let mockGraphData;
+    
+    beforeEach(() => {
+        jest.clearAllMocks();
+        container = createMockSelection();
+        mockGraphData = {
+            nodes: [
+                { id: 1, type: 'image', properties: { url: 'test.jpg' } },
+                { id: 2, type: 'user', name: 'Test User' },
+                { id: 3, type: 'attribute', name: 'Test Attr' }
+            ],
+            links: [
+                { source: 1, target: 2 },
+                { source: 2, target: 3 }
+            ]
+        };
+    });
+
+    test('setupForces validates input parameters', () => {
+        expect(() => {
+            setupGraph(container, { nodes: null, links: [] }, 800, 600);
+        }).toThrow('Invalid simulation setup parameters');
+
+        expect(() => {
+            setupGraph(container, { nodes: [], links: null }, 800, 600);
+        }).toThrow('Invalid simulation setup parameters');
+    });
+
+    test('forces are configured with correct parameters', () => {
+        const graph = setupGraph(container, mockGraphData, 800, 600);
+        const simulation = graph.simulation;
+
+        // Verify link force configuration
+        const linkForce = simulation._forces.get('link');
+        expect(linkForce).toBeDefined();
+        expect(linkForce._links).toEqual(mockGraphData.links);
+        
+        // Test link distance calculation
+        const imageUserLink = mockGraphData.links[0];
+        const userAttrLink = mockGraphData.links[1];
+        
+        const imageUserDist = linkForce.distance()(imageUserLink);
+        const userAttrDist = linkForce.distance()(userAttrLink);
+        
+        expect(imageUserDist).toBeGreaterThan(userAttrDist);
+        expect(imageUserDist).toBeLessThanOrEqual(forceConfig.link.distance.image * forceConfig.link.distance.variations.max);
+        expect(imageUserDist).toBeGreaterThanOrEqual(forceConfig.link.distance.image * forceConfig.link.distance.variations.min);
+
+        // Verify charge force configuration
+        const chargeForce = simulation._forces.get('charge');
+        expect(chargeForce).toBeDefined();
+        expect(chargeForce.distanceMax()).toBe(forceConfig.charge.distanceMax);
+        expect(chargeForce.distanceMin()).toBe(forceConfig.charge.distanceMin);
+        
+        // Test charge strength calculation
+        const imageNode = mockGraphData.nodes[0];
+        const userNode = mockGraphData.nodes[1];
+        const attrNode = mockGraphData.nodes[2];
+        
+        expect(chargeForce.strength()(imageNode)).toBe(forceConfig.charge.image);
+        expect(chargeForce.strength()(userNode)).toBe(forceConfig.charge.user);
+        expect(chargeForce.strength()(attrNode)).toBe(forceConfig.charge.attribute);
+
+        // Verify collision force configuration
+        const collideForce = simulation._forces.get('collide');
+        expect(collideForce).toBeDefined();
+        expect(collideForce.strength()).toBe(forceConfig.collide.strength);
+        expect(collideForce.iterations()).toBe(forceConfig.collide.iterations);
+        
+        // Test collision radius calculation
+        expect(collideForce.radius()(imageNode)).toBe(forceConfig.collide.radius.image);
+        expect(collideForce.radius()(userNode)).toBe(forceConfig.collide.radius.user);
+        expect(collideForce.radius()(attrNode)).toBe(forceConfig.collide.radius.attribute);
+    });
+
+    test('simulation parameters are correctly applied', () => {
+        const graph = setupGraph(container, mockGraphData, 800, 600);
+        const simulation = graph.simulation;
+        
+        expect(simulation.alpha()).toBe(forceConfig.simulation.alpha);
+        expect(simulation.alphaDecay()).toBe(forceConfig.simulation.alphaDecay);
+        expect(simulation.alphaTarget()).toBe(forceConfig.simulation.alphaTarget);
+    });
+});

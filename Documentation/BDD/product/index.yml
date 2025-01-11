@@ -22,12 +22,25 @@ features:
       - Graph display with D3.js
       - Node properties and theming
       - Interactive navigation
-      - Graph filtering (planned)
+      - Error handling and recovery
+      - Performance optimization
     implementations:
       - src/components/GraphVisualization.jsx
       - src/hooks/useD3Graph.js
-      - src/lib/d3/setupGraph.js
-      - src/lib/d3/interactions.js
+      - src/lib/d3/core/GraphInitializer.js
+      - src/lib/d3/core/GraphManager.js
+      - src/lib/d3/rendering/NodeRenderer.js
+      - src/lib/d3/layouts/spiral/SpiralCalculator.js
+      - src/lib/d3/layouts/boundingCircles.js
+      - src/lib/d3/interactions/hover.js
+      - src/lib/d3/interactions/edgeBundling.js
+      - src/lib/d3/forceConfig.js
+    documentation:
+      - src/lib/d3/README.md
+      - src/lib/d3/core/ARCHITECTURE.md
+      - src/lib/d3/layouts/README.md
+      - src/lib/d3/layouts/spiral/README.md
+      - Documentation/revised-refactoring-plan.md
 
   image_upload:
     description: Image upload workflow with AI analysis
@@ -39,11 +52,17 @@ features:
       - Duplicate detection
       - AI analysis with Anthropic
       - Error handling
+      - Performance optimization
     implementations:
       - src/app/api/images/upload/route.js
+      - src/app/api/images/process/route.js
       - src/lib/neo4j/imageRepository.js
       - src/lib/image/imageAnalyzer.js
       - src/lib/neo4j/userRepository.js
+      - src/lib/storage/gcs.js
+    documentation:
+      - src/lib/image/README.md
+      - src/lib/storage/README.md
 
   production_readiness:
     description: Production deployment and configuration

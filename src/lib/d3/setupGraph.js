@@ -5,28 +5,7 @@ import { calculateSpiralPositions, createSpiralForce } from './layouts/spiralLay
 import { calculateBoundingCircles, createBoundingCircleForce, renderBoundingCircles } from './layouts/boundingCircles'
 import { setupAttributeForces } from './layouts/attributeLayout'
 import { setupEdgeBundling, updateBundledPaths } from './interactions/edgeBundling'
-
-// Configuration for force variations
-const forceConfig = {
-    strength: {
-        sameType: 0.7,
-        userImage: 0.3,
-        default: 0.2,
-        variation: {
-            min: 0.8,
-            max: 1.2
-        }
-    },
-    distance: {
-        image: 250,
-        user: 150,
-        attribute: 200,
-        variation: {
-            min: 0.9,
-            max: 1.1
-        }
-    }
-};
+import forceConfig from './forceConfig';
 
 // Pre-compute variations for common type pairs
 const nodeTypes = ['user', 'image', 'attribute'];
@@ -35,8 +14,8 @@ nodeTypes.forEach(source => {
     nodeTypes.forEach(target => {
         const key = `${source}${target}`;
         typeVariations[key] = {
-            distance: getVariation(key, forceConfig.distance.variation),
-            strength: getVariation(key, forceConfig.strength.variation)
+            distance: getVariation(key, forceConfig.link.distance.variations),
+            strength: getVariation(key, forceConfig.strength.variations)
         };
     });
 });
@@ -399,63 +378,13 @@ export function setupGraph(svgElement, data, width, height, theme) {
     })
 
     // Now set up the full simulation with all forces
+    setupForces(simulation, data.nodes, data.links)
+
+    // Update simulation parameters
     simulation
-        .nodes(data.nodes)
-        .force('link', d3.forceLink(data.links)
-            .id(d => d.id)
-            .distance(link => {
-                const sourceType = link.source.type
-                const targetType = link.target.type
-                const key = `${sourceType}${targetType}`
-                const variation = typeVariations[key].distance
-                
-                if (sourceType === 'image' || targetType === 'image') {
-                    return forceConfig.distance.image * variation
-                } else if (sourceType === 'user' || targetType === 'user') {
-                    return forceConfig.distance.user * variation
-                } else {
-                    return forceConfig.distance.attribute * variation
-                }
-            }))
-        .force('charge', d3.forceManyBody()
-            .strength(node => {
-                switch (node.type) {
-                    case 'image': return -800
-                    case 'user': return -400
-                    default: return -200
-                }
-            })
-            .distanceMax(800)
-            .distanceMin(100))
-        .force('collide', d3.forceCollide()
-            .radius(d => {
-                if (d.type === 'image') {
-                    return 120
-                } else if (d.type === 'user') {
-                    return 50
-                } else {
-                    return 30
-                }
-            })
-            .strength(0.8)
-            .iterations(3))
-
-    // Add spiral force to maintain layout
-    simulation.force('spiral', createSpiralForce())
-
-    // Setup attribute forces
-    setupAttributeForces(simulation, data.nodes, data.links)
-
-    // Create container for bounding circles
-    const boundingCircleContainer = container.append('g')
-        .attr('class', 'bounding-circles')
-        .lower()
-
-    // Reset simulation
-    simulation
-        .alpha(1)
-        .alphaDecay(0.02) // Faster decay (was 0.01)
-        .alphaTarget(0) // Allow simulation to settle (was 0.05)
+        .alpha(forceConfig.simulation.alpha)
+        .alphaDecay(forceConfig.simulation.alphaDecay)
+        .alphaTarget(forceConfig.simulation.alphaTarget)
         .restart()
 
     // Update function for force simulation
@@ -662,4 +591,77 @@ export function setupGraph(svgElement, data, width, height, theme) {
             simulation.stop()
         }
     }
+}
+
+/**
+ * Sets up force simulation with configured parameters
+ * @param {Object} simulation - D3 force simulation instance
+ * @param {Array} nodes - Graph nodes
+ * @param {Array} links - Graph links
+ */
+function setupForces(simulation, nodes, links) {
+    // Validate inputs
+    if (!simulation || !nodes || !links) {
+        throw new Error('Invalid simulation setup parameters')
+    }
+
+    simulation
+        .nodes(nodes)
+        .force('link', setupLinkForce(links))
+        .force('charge', setupChargeForce())
+        .force('collide', setupCollideForce())
+        .force('spiral', createSpiralForce())
+
+    // Setup attribute forces
+    setupAttributeForces(simulation, nodes, links)
+}
+
+/**
+ * Configures link force with distance calculations
+ * @param {Array} links - Graph links
+ * @returns {Object} Configured link force
+ */
+function setupLinkForce(links) {
+    return d3.forceLink(links)
+        .id(d => d.id)
+        .distance(link => {
+            const sourceType = link.source.type
+            const targetType = link.target.type
+            const key = `${sourceType}${targetType}`
+            const variation = getVariation(key, forceConfig.link.distance.variations)
+            
+            if (sourceType === 'image' || targetType === 'image') {
+                return forceConfig.link.distance.image * variation
+            } else if (sourceType === 'user' || targetType === 'user') {
+                return forceConfig.link.distance.user * variation
+            } else {
+                return forceConfig.link.distance.attribute * variation
+            }
+        })
+}
+
+/**
+ * Configures charge force with type-based strengths
+ * @returns {Object} Configured charge force
+ */
+function setupChargeForce() {
+    return d3.forceManyBody()
+        .strength(node => {
+            return forceConfig.charge[node.type] || forceConfig.charge.attribute
+        })
+        .distanceMax(forceConfig.charge.distanceMax)
+        .distanceMin(forceConfig.charge.distanceMin)
+}
+
+/**
+ * Configures collision force with type-based radii
+ * @returns {Object} Configured collision force
+ */
+function setupCollideForce() {
+    return d3.forceCollide()
+        .radius(d => {
+            return forceConfig.collide.radius[d.type] || forceConfig.collide.radius.attribute
+        })
+        .strength(forceConfig.collide.strength)
+        .iterations(forceConfig.collide.iterations)
 }

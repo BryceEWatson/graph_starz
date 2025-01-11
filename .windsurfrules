@@ -1,227 +1,193 @@
----
 name: Graph Starz LLM Coding Guidelines
-description: Concise coding guidelines for LLM code generation in Graph Starz (Next.js/Node.js focused).
-version: 1.4.0
-last_updated: "2024-12-30"
+description: Concise coding guidelines for LLM code generation.
+version: 1.5.2
+last_updated: "2025-01-11"
 
 general_principles:
-  description: Core principles for all JavaScript/Node.js code.
+  description: Core JS/Node.js principles.
   rules:
+    - id: FullFileRead
+      description: Always read the *entire file* before changes.
+      how_to: Do not assume from partial code; read the full file.
     - id: KISS
-      description: Keep code simple, avoid over-engineering.
-      how_to: Use the simplest logic to achieve the desired output. Break down complex logic into smaller functions.
-      example: |
-        // BAD: Nested ifs
-        if (x > 0) { if (y < 10) { return true } }
-        // GOOD: Single condition
-        if (x > 0 && y < 10) { return true }
+      description: Keep code simple.
+      how_to: Use simplest logic; break down complex logic.
     - id: POLA
-      description: Follow common JavaScript/Node.js coding patterns and conventions.
-      how_to: Use idiomatic style for JavaScript/Node.js (e.g., camelCase for variables, PascalCase for components).
-      example: |
-        // BAD: snake_case
-        let my_var_name = "hello";
-        // GOOD: camelCase
-        let myVarName = "hello";
+      description: Follow common JS/Node.js conventions.
+      how_to: Use idiomatic style (camelCase, PascalCase).
     - id: SRP
-      description: Each function/module has one specific job.
-      how_to: Separate different concerns into separate functions/modules.
-      example: |
-        // BAD: Single fn does many things
-        function processUser(data) { validate(); createObj(); save() }
-        // GOOD: Separate fns
-        function validate(data); function createObj(data); function save(obj)
+      description: Each function/module has one job.
+      how_to: Separate concerns.
     - id: DRY
-      description: Avoid repeating code. Use shared functions.
-      how_to: Refactor duplicated code into reusable functions.
-      example: |
-        // BAD: Duplicated Logic
-        function area1(w, h) { return w * h } function area2(w, h) { return w * h }
-        // GOOD: Shared Function
-        function area(w, h) { return w * h } function area1(w,h){ area(w,h) } function area2(w,h) { area(w,h) }
+      description: Avoid repeating code.
+      how_to: Use shared functions.
     - id: FailFast
-      description: Report errors early, don't try to guess.
-      how_to: Exit immediately with a clear error message when encountering critical errors.
+      description: Report errors early.
+      how_to: Exit immediately on critical errors.
     - id: ValidateEnv
       description: Validate env variables at startup.
-      how_to: Check type and format, provide clear error messages. Do not use default values for environment variables, throw an error if not present.
+      how_to: Check type/format; error if absent.
 
 testing:
-  description: Test-driven development and test rules.
+  description: TDD rules.
   rules:
     - id: TestFirst
-      description: Write tests before implementation.
-      how_to: Define test cases (normal, edge, error) *before* writing any implementation code.
-      example: |
-        // Test Example: add(a, b)
-        // add(1, 2) -> 3 ; add(0,0) -> 0 ; add(-1, 1) -> 0
-        test('add', () => { expect(add(1, 2)).toBe(3); expect(add(0, 0)).toBe(0); expect(add(-1, 1)).toBe(0) });
+      description: Write tests before code.
+      how_to: Define test cases (normal, edge, error) first.
     - id: TestImpl
-      description: Implement minimal code to pass tests.
-      how_to: Write code to satisfy tests, with no more code than required.
+      description: Minimal code to pass tests.
+      how_to: Write only necessary code.
     - id: TestFiles
-      description: Test files in __tests__ dir, mock files in __mocks__ dir. Use .test.js extension.
-      how_to: Test files should be in `__tests__` directory, mock files in `__mocks__`, utilities in `__test_utils__`. Test files should end in `.test.js`
+      description: Test files in `__tests__`; use `.test.js`.
+      how_to: Mocks in `__mocks__`.
     - id: JestMocking
-      description: Use Jest mocking consistently, reuse mocks. Mock D3 using d3Mock.js, ensure method chaining.
-      how_to: Ensure that reusable mocks are kept in `__mocks__`, and that the d3 mock from `__mocks__/d3Mock.js` is used for all d3 mocking.
+      description: Use Jest mocking; reuse mocks.
+      how_to: Use `d3Mock.js` for d3; ensure chaining.
 
 code_style:
-  description: Code formatting and structure rules.
+  description: Code formatting.
   rules:
     - id: UseClient
-      description: Add 'use client' directive in NextJS client components.
-      how_to: Start client-side NextJS components with `use client`.
-      example: `"use client"; function MyComponent() { //.. }`
+      description: Add 'use client' in NextJS client components.
+      how_to: Start client components with `use client`.
     - id: NoSemicolons
-      description: Avoid trailing semicolons in NextJS.
-      how_to: Omit semicolons at the end of statements unless required by language.
-      example: `let a = 1` // Good
+      description: Avoid trailing semicolons.
+      how_to: Omit unless required.
     - id: LFLineEndings
       description: Use LF line endings.
-      how_to: Ensure all files use LF, not CRLF endings.
+      how_to: Ensure LF, not CRLF.
     - id: NoSpecialChars
-      description: Avoid special chars/emojis in code.
-      how_to: Avoid using special characters or emojis in code or documentation.
+      description: Avoid special chars/emojis.
+      how_to: Do not use special characters.
 
 error_handling:
-  description: Error handling rules.
+  description: Error handling.
   rules:
       - id: TryCatch
-        description: Use try-catch blocks for potential errors.
-        how_to: Wrap code that may error in `try...catch`, log the error, and attempt to recover or rethrow an error.
-        example: |
-          try {
-            result = 1 / 0;
-          } catch (e) {
-            console.error('Error:', e);
-            result = 0;
-          }
+        description: Use try-catch for errors.
+        how_to: Wrap code; log; recover/rethrow.
       - id: DetailedErrors
-        description: Provide detailed, human-readable error messages.
-        how_to: Include error type, message, and other useful error information like stack traces.
-        example: `console.error('Error: Cannot connect. Type: ${e}, Stack: ${trace}');`
+        description: Detailed error messages.
+        how_to: Include type, message, stack.
       - id: HTTPCodes
-        description: Use specific HTTP codes for API responses.
+        description: Use specific HTTP codes.
         codes:
-          401: Authentication/Authorization
-          409: Resource conflicts
-          400: Invalid requests
-          500: Server errors
+          401: Auth
+          409: Conflicts
+          400: Invalid
+          500: Server
       - id: PowerErrors
-        description: Powershell specific error message formatting rules.
-        how_to: Do not add colons before error variables (e.g., use "Error $_" not "Error: $_"). Use string concatenation for error messages (e.g., "Failed to test $endpoint $_").
+        description: PowerShell error format.
+        how_to: Use "Error $_"; use string concat.
 
 deployment:
-  description: Deployment script rules.
+  description: Deployment rules.
   rules:
     - id: EnvChecks
-      description: Verify environment in deployment scripts.
-      how_to: Ensure that deployment scripts verify tools, env vars, and network connectivity to services.
+      description: Verify environment.
+      how_to: Verify tools, env, connectivity.
     - id: NoSilentFailures
-      description: Scripts must not continue if prerequisites are not met.
-      how_to: Validate each step in the deployment, and exit with error codes if a step fails.
+      description: Do not continue if prerequisites are not met.
+      how_to: Validate steps; exit on failure.
     - id: WindowsPowershell
-      description: Ensure Windows PowerShell compatibility for scripts. Use \\ for windows file paths.
-      how_to: Use Windows PowerShell as the primary shell, and ensure that all script paths use the \\ path separators.
+      description: PowerShell compatibility.
+      how_to: Use PowerShell; `\` for paths.
 
 documentation:
-  description: Documentation and BDD rules.
+  description: Documentation rules.
   rules:
     - id: NoHypothetical
-      description: Documentation must be accurate, no hypothetical content.
-      how_to: Ensure documentation accurately reflects the current state of code.
+      description: Accurate documentation.
+      how_to: Docs must reflect current code.
     - id: FeatureCodeAlign
-      description: Feature files must match code.
-      how_to: Ensure that feature files match the implemented functionality of the system. Update docs and features when code changes.
+      description: Feature files match code.
+      how_to: Feature files must match implementation.
 
 feature_integration:
-  description: Rules for integrating new features.
+  description: Feature integration rules.
   rules:
       - id: APIConsistency
-        description: Maintain consistent APIs and data structures.
-        how_to: Follow existing API patterns and naming conventions, ensure backward compatibility, or document breaking changes.
+        description: Consistent APIs/data.
+        how_to: Follow existing API patterns.
       - id: ComponentDeps
-        description: Map and update tests for affected components.
-        how_to: Map all components affected by a new feature, and ensure that each component has corresponding tests, and that mock data matches production data structures.
+        description: Update tests for component changes.
+        how_to: Map affected components; ensure tests.
       - id: SystemArch
-        description: Follow established architectural patterns.
-        how_to: Follow existing architecture patterns, maintain separation of concerns.
+        description: Follow arch patterns.
+        how_to: Follow existing arch; maintain separation.
       - id: DataConsistency
-        description: Use consistent data structures throughout.
-        how_to: Document data schemas and transformations, validate data at system boundaries, and maintain integrity across components.
+        description: Consistent data.
+        how_to: Document schemas; validate data.
 
 research_questions:
-  description: When and how to ask research questions.
+  description: How to ask research questions.
   rules:
     - id: WhenAsk
-      description: Ask when behavior unclear, unsure about implementation, complex libs, or before assumptions.
-      how_to: Ask questions when unsure of correct implementation approach, when encountering complex library interactions, or when encountering unexpected test failures. Do not make assumptions about system behavior.
+      description: Ask when unsure/complex.
+      how_to: Do not assume; ask when unclear.
     - id: Format
-      description: Questions should be specific, focused, with code/test failures.
-      how_to: Questions should be specific, state the problem clearly, include code snippets or test failures, state what you have already tried and why you are asking the question.
+      description: Specific questions with code.
+      how_to: Include problem, code, what you tried.
 
 code_review:
-    description: Rules for performing code reviews
+    description: Code review rules
     rules:
       - id: FeatureReview
-        description: Review features for alignment, duplicate functionality, API consistency, and test coverage.
-        how_to: Check for feature alignment with the product, duplicate functionality, API consistency, valid data structures, error handling, and test coverage during code review.
+        description: Review features, tests, API.
+        how_to: Check feature, duplicate logic, API, tests.
       - id: ArchitectureReview
-        description: Review architecture fit, scalability, and security.
-        how_to: Check architectural fit, scalability, maintainability, security, component interactions, and documentation updates during code review.
+        description: Review arch, scalability, security.
+        how_to: Check arch, scalability, security, component interaction.
 
 workflow:
-  description: Development workflow steps.
+  description: Development steps.
   steps:
-    - Write tests before implementation (TDD).
-    - Document decisions in a journal.
-    - Research solutions before implementation.
-    - Regular code reviews.
-    - Verify code matches BDD specifications.
-    - Remove hypothetical content during reviews.
-    - Update documentation to reflect state.
+    - Write tests first.
+    - Document decisions.
+    - Research solutions.
+    - Code reviews.
+    - Verify BDD.
+    - Update docs.
 
 feature_verification:
-  description: Process for code-feature alignment.
+  description: Code-feature alignment.
   steps:
-    - Review feature file scenarios and requirements.
-    - Locate corresponding code implementations.
-    - Compare behavior specifications with actual code.
-    - Run tests to verify feature coverage.
-    - Document gaps or inconsistencies.
-    - Remove hypothetical scenarios.
-    - Update implementation status.
+    - Review feature scenarios.
+    - Locate implementations.
+    - Compare with code.
+    - Run tests.
+    - Document gaps.
+    - Remove hypothetical.
+    - Update status.
 
 test_driven_development:
-  description: Guidelines for TDD practice.
+  description: TDD guidelines.
   test_case_coverage:
-    - Expected behavior and normal operations.
-    - Edge cases and boundary conditions.
-    - Error handling scenarios.
+    - Expected behavior.
+    - Edge cases.
+    - Error handling.
   workflow:
-    - Write specific test cases with clear pass/fail criteria.
-    - Write tests before implementing functionality.
-    - Implement minimum code to make tests pass.
-    - Refactor while maintaining passing tests.
-    - Run full test suite on every code change.
+    - Write tests.
+    - Write code to pass.
+    - Refactor with passing tests.
+    - Run all tests.
   documentation:
-    - Document test cases in test files.
+    - Document tests.
 
 research_process:
-  description: System for tracking and resolving knowledge gaps.
+  description: Tracking research.
   gap_identification:
     scenario:
-      - Document code, commands, and observed behavior.
-      - Note system state and conditions.
-      - Identify recurring patterns.
+      - Document code/behavior.
+      - Note system state.
+      - Identify patterns.
   research_questions:
     format:
-      - Clear problem statement.
-      - Current knowledge and attempts.
+      - Clear problem.
+      - Current attempts.
       - Specific questions.
-      - Supporting code/errors.
+      - Code/errors.
     tracking:
       - Add to "c:/Users/Bryce/Documents/Projects/graph_starz/Documentation/research_questions.md".
   solution_handling:
-    - Share solutions in documentation.
+    - Share solutions.
