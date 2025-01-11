@@ -14,7 +14,7 @@
     "lint": "next lint",
     "db:init:clear": "cross-env DEBUG=db:init:* GCS_BUCKET_NAME=starz-439218.firebasestorage.app GOOGLE_APPLICATION_CREDENTIALS_PATH=./gcs-credentials.json FORCE_RESET=true CLEAR_DATA=true node src/lib/neo4j/init-db.js",
     "db:init:prod:clear": "cross-env GOOGLE_APPLICATION_CREDENTIALS_PATH=./gcs-credentials.json GCS_BUCKET_NAME=starz-prod NODE_ENV=production FORCE_RESET=true CLEAR_DATA=true DEBUG=db:init:* node src/lib/neo4j/init-db.js",
-    "test": "jest --colors=false --verbose=false --silent | node scripts/clean-output.js",
+    "test": "jest --colors=false --verbose=false",
     "test:watch": "jest --watch --colors=false --verbose=false --silent",
     "test:coverage": "jest --coverage --colors=false --verbose=false --silent --coverageReporters='text-summary'",
     "validate-secrets": "cross-env DEBUG=app:* node scripts/validate-secrets.js development",

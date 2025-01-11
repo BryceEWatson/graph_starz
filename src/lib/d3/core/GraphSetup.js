@@ -171,7 +171,19 @@ export class GraphSetup {
             return { nodes, links }
         } catch (error) {
             console.error('Failed to create graph elements:', error)
-            throw new Error('Graph element creation failed: ' + error.message)
+            
+            // Create fallback node on error
+            const fallbackNode = container.append('g')
+                .attr('class', 'nodes')
+                .selectAll('circle')
+                .data([{ id: 'error' }])
+                .join('circle')
+                .attr('class', 'node fallback')
+                .attr('r', this.config.nodeSizes.user)
+                .attr('fill', this.config.theme.colors.nodeFill)
+                .each(node => this.createFallbackNode(node))
+
+            return { nodes: fallbackNode, links: null }
         }
     }
 

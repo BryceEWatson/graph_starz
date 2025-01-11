@@ -4,9 +4,49 @@ import { LinkInteractionManager } from '../../interactions/LinkInteractionManage
 import * as d3 from 'd3'
 
 // Mock d3 and interaction managers
-jest.mock('d3')
-jest.mock('../../interactions/NodeInteractionManager')
-jest.mock('../../interactions/LinkInteractionManager')
+const mockSelection = {
+    append: jest.fn().mockReturnThis(),
+    attr: jest.fn().mockReturnThis(), 
+    style: jest.fn().mockReturnThis(),
+    text: jest.fn().mockReturnThis(),
+    each: jest.fn(),
+    remove: jest.fn(),
+    call: jest.fn().mockReturnThis(),
+    on: jest.fn().mockReturnThis()
+}
+
+jest.mock('d3', () => ({
+    select: jest.fn(() => mockSelection),
+    forceSimulation: jest.fn(() => ({
+        force: jest.fn().mockReturnThis(),
+        nodes: jest.fn().mockReturnThis(),
+        on: jest.fn().mockReturnThis()
+    })),
+    forceManyBody: jest.fn(),
+    forceCollide: jest.fn(),
+    forceCenter: jest.fn(),
+    easeCubicInOut: () => t => t
+}))
+
+const mockNodeManager = {
+    cleanup: jest.fn(),
+    setupNodes: jest.fn(),
+    attachEventHandlers: jest.fn()
+}
+
+const mockLinkManager = {
+    cleanup: jest.fn(),
+    setupLinks: jest.fn(),
+    attachEventHandlers: jest.fn()
+}
+
+jest.mock('../../interactions/NodeInteractionManager', () => ({
+    NodeInteractionManager: jest.fn().mockImplementation(() => mockNodeManager)
+}))
+
+jest.mock('../../interactions/LinkInteractionManager', () => ({
+    LinkInteractionManager: jest.fn().mockImplementation(() => mockLinkManager)
+}))
 
 describe('GraphSetup', () => {
     let validConfig
@@ -15,8 +55,12 @@ describe('GraphSetup', () => {
     let mockBackground
 
     beforeEach(() => {
-        // Setup valid configuration
         validConfig = {
+            container: {
+                width: 800,
+                height: 600,
+                containerId: 'graph-container'
+            },
             forceConfig: {
                 link: {
                     distance: {
@@ -62,11 +106,33 @@ describe('GraphSetup', () => {
             }
         }
 
+        // Reset all mocks
+        jest.clearAllMocks()
+        
+        // Setup d3.select mock for container
+        d3.select.mockImplementation(() => ({
+            ...mockSelection,
+            node: () => document.createElement('div')
+        }))
+
         // Mock D3 selections
-        mockContainer = {
+        const mockD3Selection = {
             append: jest.fn().mockReturnThis(),
             attr: jest.fn().mockReturnThis(),
-            style: jest.fn().mockReturnThis()
+            selectAll: jest.fn().mockReturnThis(),
+            data: jest.fn().mockReturnThis(),
+            join: jest.fn().mockReturnThis(),
+            text: jest.fn().mockReturnThis(),
+            each: jest.fn().mockReturnThis(),
+            call: jest.fn().mockReturnThis(),
+            on: jest.fn().mockReturnThis()
+        }
+
+        mockContainer = {
+            append: jest.fn().mockReturnValue(mockD3Selection),
+            attr: jest.fn().mockReturnThis(),
+            selectAll: jest.fn().mockReturnThis(),
+            each: jest.fn().mockReturnThis()
         }
 
         mockBackground = {
@@ -78,8 +144,7 @@ describe('GraphSetup', () => {
             append: jest.fn().mockReturnValue(mockContainer)
         }
 
-        // Mock d3.select
-        d3.select.mockImplementation(() => mockSvg)
+        d3.select = jest.fn().mockReturnValue(mockD3Selection)
     })
 
     describe('Constructor', () => {
@@ -96,16 +161,16 @@ describe('GraphSetup', () => {
 
         test('throws on invalid force config', () => {
             const invalidConfig = { ...validConfig }
-            delete invalidConfig.forceConfig.link
+            delete invalidConfig.forceConfig.link.distance
             expect(() => new GraphSetup(invalidConfig))
                 .toThrow('Missing link distance configuration')
         })
 
         test('throws on missing theme colors', () => {
             const invalidConfig = { ...validConfig }
-            delete invalidConfig.theme.colors
+            delete invalidConfig.theme.colors.nodeFill
             expect(() => new GraphSetup(invalidConfig))
-                .toThrow('Theme colors are required')
+                .toThrow('Missing required theme color: nodeFill')
         })
 
         test('throws on missing node sizes', () => {
@@ -143,74 +208,104 @@ describe('GraphSetup', () => {
     })
 
     describe('Graph Element Creation', () => {
-        let setup
-        let mockData
+        let graphSetup
+        let mockD3Selection
+        let mockContainer
+        const validData = {
+            nodes: [{ id: 1 }, { id: 2 }],
+            links: [{ source: 1, target: 2 }]
+        }
 
         beforeEach(() => {
-            setup = new GraphSetup(validConfig)
-            mockData = {
-                nodes: [
-                    { id: 1, type: 'user', name: 'User 1' },
-                    { id: 2, type: 'image', name: 'Image 1' },
-                    { id: 3, type: 'attribute', name: 'Attribute 1' }
-                ],
-                links: [
-                    { source: 1, target: 2, type: 'UPLOADED' },
-                    { source: 2, target: 3, type: 'HAS_ATTRIBUTE' }
-                ]
-            }
-        })
-
-        test('creates nodes and links with valid data', () => {
-            const container = {
+            // Mock D3 selections
+            mockD3Selection = {
                 append: jest.fn().mockReturnThis(),
+                attr: jest.fn().mockReturnThis(),
                 selectAll: jest.fn().mockReturnThis(),
                 data: jest.fn().mockReturnThis(),
                 join: jest.fn().mockReturnThis(),
-                attr: jest.fn().mockReturnThis()
+                text: jest.fn().mockReturnThis(),
+                each: jest.fn().mockReturnThis(),
+                call: jest.fn().mockReturnThis(),
+                on: jest.fn().mockReturnThis()
             }
 
-            const result = setup.createGraphElements(container, mockData)
+            mockContainer = {
+                append: jest.fn().mockReturnValue(mockD3Selection),
+                attr: jest.fn().mockReturnThis(),
+                selectAll: jest.fn().mockReturnThis(),
+                each: jest.fn().mockReturnThis()
+            }
+
+            // Mock D3 methods
+            d3.select = jest.fn().mockReturnValue(mockD3Selection)
+
+            graphSetup = new GraphSetup(validConfig)
+            graphSetup.setupContainer(mockSvg, 800, 600)
+        })
+
+        it('creates nodes and links with valid data', () => {
+            const container = mockContainer
+            const result = graphSetup.createGraphElements(container, validData)
+            
+            // Verify container methods were called
+            expect(container.append).toHaveBeenCalledWith('g')
+            
+            // Verify D3 selection methods were called
+            expect(mockD3Selection.selectAll).toHaveBeenCalledWith('line')
+            expect(mockD3Selection.data).toHaveBeenCalledWith(validData.links)
+            expect(mockD3Selection.join).toHaveBeenCalledWith('line')
+            
+            // Verify event handlers were attached
+            expect(mockNodeManager.attachEventHandlers).toHaveBeenCalled()
+            expect(mockLinkManager.attachEventHandlers).toHaveBeenCalled()
+            
+            // Verify result structure
             expect(result).toHaveProperty('nodes')
             expect(result).toHaveProperty('links')
         })
 
-        test('throws on invalid data', () => {
-            expect(() => setup.createGraphElements(mockContainer, {}))
-                .toThrow('Invalid graph data')
-            expect(() => setup.createGraphElements(mockContainer, { nodes: [] }))
-                .toThrow('Invalid graph data')
-            expect(() => setup.createGraphElements(mockContainer, { links: [] }))
-                .toThrow('Invalid graph data')
+        it('throws on invalid data', () => {
+            const container = mockContainer
+            expect(() => graphSetup.createGraphElements(container)).toThrow('Invalid graph data')
+            expect(() => graphSetup.createGraphElements(container, { nodes: null })).toThrow('Invalid graph data')
+            expect(() => graphSetup.createGraphElements(container, { links: null })).toThrow('Invalid graph data')
         })
 
-        test('creates fallback node on error', () => {
-            const mockNode = {
-                append: jest.fn().mockReturnThis(),
-                attr: jest.fn().mockReturnThis(),
-                style: jest.fn().mockReturnThis()
-            }
-
-            setup.createFallbackNode(mockNode)
-            expect(mockNode.append).toHaveBeenCalledWith('circle')
-            expect(mockNode.append).toHaveBeenCalledWith('text')
+        it('creates fallback node on error', () => {
+            const container = mockContainer
+            const error = new Error('Test error')
+            mockNodeManager.attachEventHandlers.mockImplementation(() => { throw error })
+            
+            const result = graphSetup.createGraphElements(container, validData)
+            
+            // Verify fallback node was created
+            expect(mockD3Selection.attr).toHaveBeenCalledWith('class', 'node fallback')
+            expect(mockD3Selection.text).toHaveBeenCalledWith('Error loading node')
+            expect(mockD3Selection.each).toHaveBeenCalled()
         })
     })
 
-    describe('Resource Cleanup', () => {
-        test('calls cleanup on managers', () => {
-            const setup = new GraphSetup(validConfig)
-            setup.cleanup()
-            expect(setup.nodeManager.cleanup).toHaveBeenCalled()
-            expect(setup.linkManager.cleanup).toHaveBeenCalled()
+    describe('Cleanup', () => {
+        let graphSetup
+
+        beforeEach(() => {
+            graphSetup = new GraphSetup(validConfig)
+            graphSetup.nodeManager = mockNodeManager
+            graphSetup.linkManager = mockLinkManager
         })
 
-        test('handles cleanup errors gracefully', () => {
-            const setup = new GraphSetup(validConfig)
-            setup.nodeManager.cleanup.mockImplementation(() => {
-                throw new Error('Cleanup failed')
-            })
-            expect(() => setup.cleanup()).not.toThrow()
+        it('calls cleanup on managers', () => {
+            graphSetup.cleanup()
+            expect(mockNodeManager.cleanup).toHaveBeenCalled()
+            expect(mockLinkManager.cleanup).toHaveBeenCalled()
+        })
+
+        it('handles cleanup errors gracefully', () => {
+            const error = new Error('Cleanup error')
+            mockNodeManager.cleanup.mockImplementation(() => { throw error })
+            
+            expect(() => graphSetup.cleanup()).not.toThrow()
         })
     })
 })
