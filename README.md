@@ -2,6 +2,9 @@
 
 Graph Starz is a comprehensive open source project built with [Next.js](https://nextjs.org) that delivers interactive graph visualizations, secure user management, AI-powered image analysis, and robust production deployment.
 
+![Graph Starz Visualization Example](./Documentation/Screenshots/Screenshot_Graph_1.png)
+*Interactive graph visualization showing connected images and their relationships, powered by D3.js*
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Features](#features)
