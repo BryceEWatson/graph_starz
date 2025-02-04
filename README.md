@@ -16,6 +16,7 @@ Graph Starz is a comprehensive open source project built with [Next.js](https://
 6. [Environment Variables](#environment-variables)
 7. [Contributing](#contributing)
 8. [License](#license)
+9. [Code References](#code-references)
 
 ## Overview
 
@@ -140,3 +141,34 @@ Contributions are welcome! Please adhere to the following guidelines:
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Code References
+
+Below are links to important code and configuration files in the repository:
+
+- **Authentication & User Management**:
+  - [NextAuth Options](./src/app/api/auth/[...nextauth]/options.js)
+  - [User Repository](./src/lib/neo4j/userRepository.js)
+  - [Whitelist Route](./src/app/api/auth/whitelist/route.js)
+
+- **Interactive Graph Visualization**:
+  - [Graph Visualization Component](./src/components/GraphVisualization.jsx)
+  - [D3 Graph Hook](./src/hooks/useD3Graph.js)
+  - [D3 Setup](./src/lib/d3/setupGraph.js)
+  - [D3 Interactions](./src/lib/d3/interactions.js)
+
+- **Image Upload Workflow with AI Analysis**:
+  - [Image Upload API Route](./src/app/api/images/upload/route.js)
+  - [Image Repository](./src/lib/neo4j/imageRepository.js)
+  - [Image Analyzer](./src/lib/image/imageAnalyzer.js)
+
+- **Production Deployment**:
+  - [Production Deployment Script](./scripts/prod-deploy-cloud-run.ps1)
+  - [Dockerfile](./Dockerfile)
+
+- **Configuration**:
+  - [package.json](./package.json)
+  - [.env.example](./.env.example)
+
+- **BDD Documentation**:
+  - [Product BDD Documentation](./Documentation/BDD/product/index.yml)

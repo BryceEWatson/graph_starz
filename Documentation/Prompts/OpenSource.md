@@ -53,3 +53,7 @@ FRONTEND_URL=http://localhost:3000  # Update for production
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 """
+
+---
+
+Can we do more to ensure the @README.md is linking to relevant code and script files in the documentation wherever possible?
