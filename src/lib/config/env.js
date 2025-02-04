@@ -3,6 +3,7 @@
 import debug from 'debug'
 import dotenv from 'dotenv'
 import path from 'path'
+import fs from 'fs'
 
 const log = debug('app:config:env')
 
@@ -264,36 +265,49 @@ function getDbConfig() {
 }
 
 /**
- * Gets the storage configuration
- * @returns {Object} Storage configuration object
- * @property {string} projectId - Google Cloud project ID
- * @property {string} [keyFilename] - Path to credentials file (development only)
- * @property {string} bucketName - GCS bucket name
- * @throws {ConfigurationError} If any required storage variables are missing
+ * Environment-Specific Credential Handling
+ * ----------------------------------------
+ * - Development: Requires local credentials file at config/storage-credentials.json
+ * - Production: Loads credentials from file mounted via Google Secret Manager
+ * - Test: Uses mocked credentials without filesystem checks
+ * @see {@link file://./scripts/prod-deploy-cloud-run.ps1} for deployment configuration
  */
-function getStorageConfig() {
+async function getStorageConfig() {
     const projectId = process.env.GOOGLE_CLOUD_PROJECT
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
     const bucketName = process.env.GCS_BUCKET_NAME
-    const isDev = process.env.NODE_ENV === 'development'
+
+    if (!projectId) {
+        throw new ConfigurationError('Missing GOOGLE_CLOUD_PROJECT', 'storage')
+    }
+
+    if (!bucketName) {
+        throw new ConfigurationError('Missing GCS_BUCKET_NAME', 'storage')
+    }
+
+    let parsedCredentials;
     
-    const config = {
+    if (process.env.NODE_ENV === 'development') {
+        const credsPath = path.resolve(credentialsPath);
+        if (!fs.existsSync(credsPath)) {
+            throw new ConfigurationError('Credentials file not found in development mode', 'storage');
+        }
+        parsedCredentials = await import(credsPath);
+    } else if (process.env.NODE_ENV === 'production') {
+        try {
+            parsedCredentials = await import(path.resolve(credentialsPath));
+        } catch (_error) {
+            throw new ConfigurationError('Invalid credential format', 'storage');
+        }
+    } else if (process.env.NODE_ENV === 'test') {
+        parsedCredentials = await import(credentialsPath);
+    }
+
+    return {
         projectId,
+        credentials: parsedCredentials,
         bucketName
     }
-
-    // Only include keyFilename in development
-    if (isDev) {
-        const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS
-        if (!keyFilename) {
-            throw new ConfigurationError(
-                'Missing required environment variable: GOOGLE_APPLICATION_CREDENTIALS',
-                'storage'
-            )
-        }
-        config.keyFilename = keyFilename
-    }
-
-    return config
 }
 
 /**
@@ -305,44 +319,72 @@ function getStorageConfig() {
  * @throws {ConfigurationError} If any required auth variables are missing
  */
 function getAuthConfig() {
-    try {
-        validateEnvConfig()
+    const googleClientId = process.env.GOOGLE_CLIENT_ID
+    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET
+    const nextAuthUrl = process.env.NEXTAUTH_URL
+    const frontendUrl = process.env.FRONTEND_URL
 
-        const isDevelopment = process.env.NODE_ENV === 'development'
-        const frontendUrl = process.env.FRONTEND_URL
-        if (!frontendUrl) {
-            throw new Error('FRONTEND_URL is required for authentication')
-        }
+    if (!googleClientId) {
+        throw new ConfigurationError('Missing GOOGLE_CLIENT_ID', 'auth')
+    }
+    if (!googleClientSecret) {
+        throw new ConfigurationError('Missing GOOGLE_CLIENT_SECRET', 'auth')
+    }
+    if (!nextAuthSecret) {
+        throw new ConfigurationError('Missing NEXTAUTH_SECRET', 'auth')
+    }
+    if (!nextAuthUrl) {
+        throw new ConfigurationError('Missing NEXTAUTH_URL', 'auth')
+    }
+    if (!frontendUrl) {
+        throw new ConfigurationError('Missing FRONTEND_URL', 'auth')
+    }
 
-        // Validate and normalize frontend URL
-        try {
-            const url = new URL(frontendUrl)
-            if (!['http:', 'https:'].includes(url.protocol)) {
-                throw new Error('FRONTEND_URL must use http or https protocol')
-            }
-        } catch (error) {
-            throw new Error(`Invalid FRONTEND_URL: ${error.message}`)
-        }
+    // Validate URL formats
+    const urlRegex = process.env.NODE_ENV === 'production'
+        ? /^https:\/\/.+/
+        : /^https?:\/\/.+/
 
-        return {
-            google: {
-                clientId: process.env.GOOGLE_CLIENT_ID,
-                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            },
-            nextAuth: {
-                secret: process.env.NEXTAUTH_SECRET,
-                url: frontendUrl, // Use the validated frontend URL
-            },
-            cookies: {
-                secure: !isDevelopment,
-                sameSite: isDevelopment ? 'lax' : 'strict',
-            }
-        }
-    } catch (error) {
+    if (!urlRegex.test(nextAuthUrl)) {
         throw new ConfigurationError(
-            `Authentication configuration error: ${error.message}`,
+            `Invalid NEXTAUTH_URL format. Must be ${process.env.NODE_ENV === 'production' ? 'HTTPS' : 'HTTP(S)'}`,
             'auth'
         )
+    }
+    if (!urlRegex.test(frontendUrl)) {
+        throw new ConfigurationError(
+            `Invalid FRONTEND_URL format. Must be ${process.env.NODE_ENV === 'production' ? 'HTTPS' : 'HTTP(S)'}`,
+            'auth'
+        )
+    }
+
+    // Configure secure cookie settings based on environment
+    const isSecure = process.env.NODE_ENV === 'production'
+    const cookiePrefix = isSecure ? '__Secure-' : ''
+    const cookieOptions = {
+        httpOnly: true,
+        secure: isSecure,
+        sameSite: 'lax',
+        path: '/'
+    }
+
+    return {
+        google: {
+            clientId: googleClientId,
+            clientSecret: googleClientSecret
+        },
+        nextAuth: {
+            secret: nextAuthSecret,
+            url: nextAuthUrl
+        },
+        frontend: {
+            url: frontendUrl
+        },
+        cookies: {
+            prefix: cookiePrefix,
+            options: cookieOptions
+        }
     }
 }
 
@@ -415,23 +457,36 @@ function getWhitelistConfig() {
  */
 function getConfig() {
     try {
-        validateEnvConfig()
-        
+        // For testing purposes, treat 'test' environment as 'development'
+        // This allows Jest tests to run with development configuration
+        const envFromProcess = process.env.NODE_ENV || 'development'
+        const currentEnv = envFromProcess === 'test' ? 'development' : envFromProcess
+
+        // Validate environment configuration
+        validateEnvConfig(currentEnv)
+
+        // Get configuration components
+        const db = getDbConfig()
+        const storage = getStorageConfig()
+        const auth = getAuthConfig()
+        const ai = getAIConfig()
+        const whitelist = getWhitelistConfig()
+
         return {
-            environment: process.env.NODE_ENV || 'development',
+            environment: currentEnv,
             debug: process.env.DEBUG || '',
-            db: getDbConfig(),
-            storage: getStorageConfig(),
-            auth: getAuthConfig(),
-            ai: getAIConfig(),
-            whitelist: getWhitelistConfig(),
-            isDevelopment: process.env.NODE_ENV === 'development',
+            db,
+            storage,
+            auth,
+            ai,
+            whitelist,
+            isDevelopment: currentEnv === 'development'
         }
     } catch (error) {
-        throw new ConfigurationError(
-            `Configuration error: ${error.message}`,
-            'general'
-        )
+        if (error instanceof ConfigurationError) {
+            throw error
+        }
+        throw new ConfigurationError(`Configuration error: ${error.message}`, 'general')
     }
 }
 

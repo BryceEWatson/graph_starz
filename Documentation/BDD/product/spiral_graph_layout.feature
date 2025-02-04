@@ -48,7 +48,7 @@ Feature: Enhanced Spiral Graph Layout
     # Implementation in boundingCircles.js:calculateBoundingCircles
     # Theme integration with setupGraph.js colors
 
-  @todo @file:src/lib/d3/layouts/attributeLayout.js @file:src/lib/d3/setupGraph.js
+  @implemented @file:src/lib/d3/layouts/attributeLayout.js @file:src/lib/d3/setupGraph.js
   Scenario: Attribute Node Positioning
     Given multiple images share common attributes
     When positioning attribute nodes
@@ -56,26 +56,24 @@ Feature: Enhanced Spiral Graph Layout
       | Force Type        | Implementation Detail                          | Config Location              |
       | Link Force       | Extend forceConfig.strength settings           | setupGraph.js:forceConfig   |
       | Collision       | Use nodeSizes.attribute for spacing            | setupGraph.js:nodeSizes     |
-      | Clustering      | Use typeVariations for similar attributes      | setupGraph.js:typeVariations|
+      | Repulsion      | Keep attributes away from user subgraphs       | attributeLayout.js          |
     And attributes should gravitate toward their connected images
     And the position should balance between all connected images
     # Implementation in attributeLayout.js:setupAttributeForces
     # Force configuration integration
 
-  @todo @file:src/lib/d3/interactions/edgeBundling.js
-  Scenario: Edge Bundling and Visual Clarity
+  @future @file:src/lib/d3/interactions/edgeRendering.js
+  Scenario: Edge Visual Clarity
     Given the graph contains many image-to-attribute connections
     When rendering edges
-    Then edges should be bundled to reduce visual clutter:
+    Then edges should be styled for clarity:
       | Feature           | Implementation Detail                          | Config Location              |
-      | Edge Bundling    | Hierarchical bundling for parallel edges      | edgeBundling.js             |
-      | Opacity         | Use existing stroke-opacity settings           | setupGraph.js:links         |
+      | Opacity         | Use theme-specific stroke-opacity              | setupGraph.js:links         |
       | Highlighting    | Integrate with hover.js states                | interactions/hover.js       |
       | Colors          | Use theme-specific link colors                | setupGraph.js:colors        |
-    And edge bundling should update smoothly during interactions
-    And the bundling should preserve edge traceability
+    And edges should update smoothly during interactions
     # Implementation using existing hover.js states
-    # New bundling in edgeBundling.js:bundleEdges
+    # Basic styling in setupGraph.js:setupLinks
 
   @todo @file:src/lib/d3/interactions/zoomBehavior.js
   Scenario: Zoom and Pan Interactions
@@ -95,6 +93,5 @@ Feature: Enhanced Spiral Graph Layout
   # Performance Acceptance Criteria
   # 1. Smooth rendering with 1000+ images per user
   # 2. Responsive interaction at 60fps
-  # 3. Edge bundling calculation under 100ms
-  # 4. Layout stabilization within 2 seconds
-  # 5. Transition duration matches setupGraph.js:transitionConfig
+  # 3. Layout stabilization within 2 seconds
+  # 4. Transition duration matches setupGraph.js:transitionConfig

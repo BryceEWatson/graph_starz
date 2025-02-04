@@ -72,16 +72,20 @@ export class PerformanceMonitor {
     /**
      * Update node count and check against thresholds
      * @param {number} count - Number of nodes
+     * @param {Object} options - Options for update
+     * @param {boolean} options.silent - Suppress warnings
      */
-    updateNodeCount(count) {
+    updateNodeCount(count, options = { silent: false }) {
         this.metrics.nodeCount = count;
         
-        if (count >= this.thresholds.nodeCountCritical) {
-            console.warn('Critical node count reached. Consider optimization strategies.');
-            return 'critical';
-        } else if (count >= this.thresholds.nodeCountWarning) {
-            console.warn('Node count approaching critical threshold.');
-            return 'warning';
+        if (!options.silent) {
+            if (count >= this.thresholds.nodeCountCritical) {
+                console.warn('Critical node count reached. Consider optimization strategies.');
+                return 'critical';
+            } else if (count >= this.thresholds.nodeCountWarning) {
+                console.warn('Node count approaching critical threshold.');
+                return 'warning';
+            }
         }
         return 'normal';
     }

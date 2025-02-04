@@ -87,6 +87,13 @@ export class SelectionManager {
     }
 
     /**
+     * Preserve selection state
+     */
+    preserveSelectionState() {
+        this.svgNodes.classed('selected', d => this.selectedNodes.has(d.id));
+    }
+
+    /**
      * Check if a node is connected to any selected node
      * @private
      */

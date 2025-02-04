@@ -663,3 +663,5 @@ export function setupGraph(svgElement, data, width, height, theme) {
         }
     }
 }
+
+export { setupGraph }

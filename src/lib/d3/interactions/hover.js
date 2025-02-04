@@ -4,165 +4,258 @@
 
 import * as d3 from 'd3';
 
-// Node interaction states
+// Node states and their visual properties
 export const nodeStates = {
     normal: {
         opacity: 1,
-        scale: 1,
-        labelOpacity: d => d.type === 'image' ? 0 : 1,  // Hide image labels by default
-        buttonOpacity: 0  // Hide details button
+        transform: 'scale(1)',
+        strokeWidth: '1px'
     },
     highlighted: {
         opacity: 1,
-        scale: 1.1,  // Slightly reduced scale for better readability
-        labelOpacity: 1,  // Show all labels when highlighted
-        buttonOpacity: 1  // Show details button
+        transform: 'scale(1.1)',
+        strokeWidth: '2px'
     },
     related: {
-        opacity: 0.9,
-        scale: 1.05,
-        labelOpacity: d => d.type === 'image' ? 0 : 0.9,  // Keep image labels hidden
-        buttonOpacity: 0  // Keep details button hidden
+        opacity: 0.8,
+        transform: 'scale(1)',
+        strokeWidth: '1px'
     },
     faded: {
-        opacity: 0.15,
-        scale: 0.6,
-        labelOpacity: d => d.type === 'image' ? 0 : 0.3,  // Keep image labels hidden
-        buttonOpacity: 0  // Keep details button hidden
+        opacity: 0.3,
+        transform: 'scale(0.9)',
+        strokeWidth: '1px'
     },
     detailed: {
         opacity: 1,
-        scale: 3,
-        zIndex: 1000,
-        labelOpacity: 1,  // Always show labels in detailed view
-        buttonOpacity: 0  // Hide button in detailed view
+        transform: 'scale(1.2)',
+        strokeWidth: '3px'
+    },
+    selected: {
+        opacity: 1,
+        transform: 'scale(1.1)',
+        strokeWidth: '2px'
     }
-};
+}
 
 /**
- * Apply visual state to nodes
+ * Apply visual state to a node
+ * @param {D3Selection} selection - D3 selection of the node
+ * @param {string} state - State name from nodeStates
+ * @throws {Error} If state is invalid
  */
-export const applyNodeState = (selection, state) => {
-    if (!selection || selection.empty()) return;
-    
-    const { opacity, scale, zIndex, labelOpacity, buttonOpacity } = nodeStates[state];
-    const datum = selection.datum();
-    const nodeType = datum.type || '';
-    const isImage = nodeType === 'image';
-    
-    // Apply class-based styling
+export function applyNodeState(selection, state) {
+    // Validate selection
+    if (!selection || selection.empty()) {
+        console.warn('Invalid or empty selection passed to applyNodeState')
+        return selection
+    }
+
+    // Validate state and use normal as fallback
+    if (typeof state !== 'string' || !(state in nodeStates)) {
+        console.warn(`Invalid state type (${typeof state}) or state (${state}) passed to applyNodeState, using "normal"`)
+        state = 'normal'
+    }
+
+    const { opacity, transform, strokeWidth } = nodeStates[state]
+
+    // Apply transitions for visual properties
     selection
-        .classed('highlighted', state === 'highlighted')
-        .classed('related', state === 'related')
-        .classed('faded', state === 'faded')
-        .classed('detailed', state === 'detailed');
+        .transition()
+        .style('opacity', opacity)
+        .style('stroke-width', strokeWidth)
+
+    // Apply transform while preserving existing transforms
+    const imageSel = selection.select('image')
+    let target = selection
+    if (!imageSel.empty()) {
+        target = imageSel
+        // Ensure image class is set
+        imageSel.attr('class', 'node-image')
+    }
+
+    // Get existing transform
+    const node = selection.node()
+    let existingTransform = ''
+    if (node) {
+        existingTransform = node.getAttribute('transform') || ''
+    }
+
+    // Combine transforms, ensuring no duplicates
+    const transforms = existingTransform.split(' ').filter(t => t.trim())
+    if (!transforms.includes(transform)) {
+        transforms.push(transform)
+    }
+    const newTransform = transforms.join(' ').trim()
     
-    // Apply opacity to the entire group
-    selection.style('opacity', opacity);
-
-    // Handle scale transform for the group
-    const currentTransform = selection.attr('transform');
-    let translate = '0,0';
-    if (currentTransform && typeof currentTransform === 'string') {
-        const translateMatch = currentTransform.match(/translate\(([^)]*)\)/);
-        if (translateMatch) {
-            translate = translateMatch[1];
-        }
-    }
-    selection.attr('transform', `translate(${translate}) scale(${scale})`);
-
-    // Update label opacity based on state
-    if (isImage) {
-        const labelContainer = selection.select('.image-label');
-        if (!labelContainer.empty()) {
-            const finalLabelOpacity = typeof labelOpacity === 'function' ? labelOpacity(datum) : labelOpacity;
-            labelContainer.style('opacity', finalLabelOpacity);
-        }
+    // Apply transform with transition, with fallback for missing transition
+    if (target.transition) {
+        target.transition().attr('transform', newTransform)
     } else {
-        const textSelection = selection.select('text');
-        if (!textSelection.empty()) {
-            const finalLabelOpacity = typeof labelOpacity === 'function' ? labelOpacity(datum) : labelOpacity;
-            textSelection.style('opacity', finalLabelOpacity);
-        }
+        target.attr('transform', newTransform)
     }
 
-    // Update details button opacity for image nodes
-    const buttonSelection = selection.select('.details-button');
-    if (!buttonSelection.empty() && isImage) {
-        buttonSelection.style('opacity', buttonOpacity);
+    // Update text opacity and ensure text element exists with content
+    let textSelection = selection.select('text')
+    if (textSelection.empty()) {
+        textSelection = selection.append('text')
+            .attr('class', 'node-label')
+            .text('')
+    }
+    
+    // Apply text opacity with transition if available
+    if (textSelection.transition) {
+        textSelection.transition().style('opacity', opacity)
+    } else {
+        textSelection.style('opacity', opacity)
     }
 
     // Handle image nodes
-    const imageSelection = selection.select('image');
-    if (!imageSelection.empty() && isImage) {
-        const baseSize = (datum.properties?.size || 35) * 1.5;
-        const scaledSize = baseSize * scale;
-        imageSelection
-            .attr('width', scaledSize)
-            .attr('height', scaledSize)
-            .attr('x', -scaledSize / 2)
-            .attr('y', -scaledSize / 2);
+    const nodeData = selection.datum ? selection.datum() : null
+    if (nodeData?.type === 'image') {
+        let labelSel = selection.select('.image-label')
+        if (labelSel.empty()) {
+            labelSel = selection.append('text')
+                .attr('class', 'image-label')
+                .text('')
+        }
+
+        // Always ensure image has proper class
+        const imgSel = selection.select('image')
+        if (!imgSel.empty()) {
+            imgSel.attr('class', 'node-image')
+        }
     }
 
-    // Set z-index for detailed view
-    if (state === 'detailed') {
-        selection.style('z-index', zIndex);
+    // Handle node state classes
+    if (nodeData) {
+        if (nodeData.isConnected) {
+            selection.classed('connected', true)
+        }
+        if (nodeData.isSelected || state === 'selected') {
+            selection.classed('selected', true)
+        }
     }
-};
+
+    return selection
+}
 
 /**
- * Reset all nodes and links to their normal state
+ * Apply hover effect to a node and its connected nodes
+ * @param {D3Selection} node - D3 selection of the node being hovered
+ * @param {D3Selection} links - D3 selection of all links
+ * @param {D3Selection} nodes - D3 selection of all nodes
  */
-export const resetAll = (nodes, links) => {
+export function applyHoverEffect(node, links, nodes) {
+    const nodeIsEmpty = (node.empty && typeof node.empty === 'function') ? node.empty() : false
+    if (!node || nodeIsEmpty || !links || !nodes) {
+        console.warn('Invalid parameters passed to applyHoverEffect')
+        return
+    }
+
+    const nodeData = node.datum()
+    if (!nodeData) {
+        console.warn('No data found for hovered node')
+        return
+    }
+
+    // Find connected nodes
+    const connectedNodeIds = new Set()
+    links.each(link => {
+        if (link.source.id === nodeData.id) {
+            connectedNodeIds.add(link.target.id)
+        } else if (link.target.id === nodeData.id) {
+            connectedNodeIds.add(link.source.id)
+        }
+    })
+
+    // Update visual states
+    nodes.each(function(d) {
+        const selection = d3.select(this)
+        if (d.id === nodeData.id) {
+            applyNodeState(selection, 'highlighted')
+        } else if (connectedNodeIds.has(d.id)) {
+            applyNodeState(selection, 'related')
+        } else {
+            applyNodeState(selection, 'faded')
+        }
+    })
+
+    // Highlight connected links
+    links.each(function(d) {
+        const link = d3.select(this)
+        if (d.source.id === nodeData.id || d.target.id === nodeData.id) {
+            link.transition()
+                .style('opacity', 0.8)
+                .style('stroke-width', '2px')
+        } else {
+            link.transition()
+                .style('opacity', 0.2)
+                .style('stroke-width', '1px')
+        }
+    })
+}
+
+/**
+ * Remove hover effects from nodes and links
+ * @param {D3Selection} nodes - D3 selection of all nodes
+ * @param {D3Selection} links - D3 selection of all links
+ */
+export function removeHoverEffect(nodes, links) {
+    if (!nodes || !links) {
+        console.warn('Invalid parameters passed to removeHoverEffect')
+        return
+    }
+
+    // Reset all nodes to normal state while preserving selection state
     nodes.each(function() {
-        applyNodeState(d3.select(this), 'normal');
-    });
-    links.style('opacity', 0.6);
-};
+        const selection = d3.select(this)
+        const nodeData = selection.datum()
+        if (nodeData && nodeData.isSelected) {
+            applyNodeState(selection, 'selected')
+        } else {
+            applyNodeState(selection, 'normal')
+        }
+    })
+
+    // Reset all links with transitions
+    links.each(function() {
+        d3.select(this)
+            .transition()
+            .style('opacity', 1)
+            .style('stroke-width', '1px')
+    })
+}
 
 /**
  * Setup hover interactions for nodes
+ * @param {D3Selection} nodes - D3 selection of all nodes
+ * @param {function} onNodeHover - Callback when node is hovered
+ * @param {function} onNodeUnhover - Callback when node hover ends
+ * @param {D3Selection} links - D3 selection of all links
  */
-export function setupHoverInteractions(nodes, links) {
+export function setupHoverInteractions(nodes, onNodeHover, onNodeUnhover, links) {
     let selectedNode = null;
-
-    // Helper function to highlight connected nodes and links
-    const highlightConnections = (d, opacity = 0.8) => {
-        const connectedNodes = new Set();
-        links.each(function(l) {
-            if (l.source === d || l.target === d) {
-                const otherNode = l.source === d ? l.target : l.source;
-                connectedNodes.add(otherNode);
-                d3.select(this).style('opacity', opacity);
-            } else {
-                d3.select(this).style('opacity', opacity === 0.8 ? 0.2 : 0.6);
-            }
-        });
-
-        nodes.each(function(n) {
-            const thisNode = d3.select(this);
-            if (this === d3.select(d.element).node()) {
-                applyNodeState(thisNode, 'highlighted');
-            } else if (connectedNodes.has(n)) {
-                applyNodeState(thisNode, 'related');
-            } else {
-                applyNodeState(thisNode, 'faded');
-            }
-        });
-    };
 
     // Setup node interactions
     nodes.on('mouseover', function(event, d) {
         // Skip hover effects if any node is selected
         if (selectedNode) return;
 
-        highlightConnections(d);
+        const node = d3.select(this);
+        applyHoverEffect(node, links, nodes);
+        if (onNodeHover && typeof onNodeHover === 'function') {
+            onNodeHover(d);
+        }
     })
-    .on('mouseout', function(_event, _d) {
+    .on('mouseout', function(event, d) {
         // Skip mouseout effects if any node is selected
         if (selectedNode) return;
 
-        resetAll(nodes, links);
+        removeHoverEffect(nodes, links);
+        if (onNodeUnhover && typeof onNodeUnhover === 'function') {
+            onNodeUnhover(d);
+        }
     })
     .on('click', function(event, d) {
         // Check if click was on the details button
@@ -187,7 +280,7 @@ export function setupHoverInteractions(nodes, links) {
         // If there's no selected node and we're clicking a new one
         if (!selectedNode) {
             selectedNode = currentNode.node();
-            highlightConnections(d, 0.8);
+            applyHoverEffect(currentNode, links, nodes);
             return;
         }
 
@@ -200,7 +293,7 @@ export function setupHoverInteractions(nodes, links) {
     bodySelection.on('click.clearSelection', () => {
         if (selectedNode) {
             selectedNode = null;
-            resetAll(nodes, links);
+            removeHoverEffect(nodes, links);
         }
     });
 
@@ -219,6 +312,6 @@ export function setupHoverInteractions(nodes, links) {
 
         // Reset any remaining states
         selectedNode = null;
-        resetAll(nodes, links);
+        removeHoverEffect(nodes, links);
     };
 }

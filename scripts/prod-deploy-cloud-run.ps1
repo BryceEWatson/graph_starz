@@ -1,4 +1,11 @@
 # Production deployment script for Graph Starz
+<#
+ENVIRONMENT CONFIGURATION GUIDE
+-------------------------------
+- Credential Loading: Matches src/lib/config/env.js
+- Production: Secrets mounted at /etc/secrets/gcs-credentials
+- Test: Uses mocked credentials from __mocks__/test-credentials.json
+#>
 param(
     [switch]$Production,
     [switch]$SkipDeploy,
@@ -6,7 +13,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 # Required secrets for the application (removed GCS credentials since we use service identity)
 $RequiredSecrets = @(
@@ -23,10 +29,10 @@ $RequiredSecrets = @(
 )
 
 function Write-Status {
-    param($Message, [switch]$Error, [switch]$Warning)
+    param($Message, [switch]$err, [switch]$Warning)
     
-    $symbol = if ($Error) { "❌" } elseif ($Warning) { "⚠️" } else { "✓" }
-    $color = if ($Error) { "Red" } elseif ($Warning) { "Yellow" } else { "Green" }
+    $symbol = if ($err) { "❌" } elseif ($Warning) { "⚠️" } else { "✓" }
+    $color = if ($err) { "Red" } elseif ($Warning) { "Yellow" } else { "Green" }
     
     Write-Host -ForegroundColor $color "$symbol $Message"
 }
@@ -34,7 +40,7 @@ function Write-Status {
 # Validate environment and get project ID
 $ProjectId = $(gcloud config get-value project 2>$null)
 if (-not $ProjectId) {
-    Write-Status "No Google Cloud project configured. Run 'gcloud config set project YOUR_PROJECT_ID'" -Error
+    Write-Status "No Google Cloud project configured. Run 'gcloud config set project YOUR_PROJECT_ID'" -err
     exit 1
 }
 
@@ -43,7 +49,7 @@ $Secrets = @{}
 foreach ($secret in $RequiredSecrets) {
     $value = gcloud secrets versions access latest --secret=$secret 2>$null
     if (-not $value) {
-        Write-Status "Missing required secret: $secret" -Error
+        Write-Status "Missing required secret: $secret" -err
         exit 1
     }
     $Secrets[$secret] = $value
@@ -74,7 +80,7 @@ if (-not $SkipImageBuild) {
     $env:DOCKER_BUILDKIT = "1"
     docker @buildArgs . 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Status "Docker build failed" -Error
+        Write-Status "Docker build failed" -err
         exit 1
     }
     Write-Status "Docker image built successfully"
@@ -113,7 +119,7 @@ if (-not $SkipDeploy) {
     # Use splatting operator @ to properly expand array arguments
     gcloud @deployArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Status "Deployment failed" -Error
+        Write-Status "Deployment failed" -err
         exit 1
     }
     Write-Status "Deployment completed"
@@ -146,7 +152,8 @@ if (-not $SkipDeploy) {
                 Write-Status "Service returned status code $($response.StatusCode)" -Warning
             }
         } catch {
-            Write-Status "Service health check failed: $_" -Warning
+            Write-Status "Deployment failed: $($_.Exception.Message)" -err
+            exit 1
         }
     }
 }

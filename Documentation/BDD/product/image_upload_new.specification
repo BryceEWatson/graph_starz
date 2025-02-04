@@ -1,0 +1,197 @@
+# Enhanced Image Upload Specification
+
+## Visual Flow Overview
+
+### Upload Page Layout
+The upload page is organized into two main sections:
+1. Upload Action Area
+   - Large drop zone for file selection
+   - Clear format/size limits display
+   - Upload initiation controls
+   - Current upload status
+
+2. History Panel
+   - Vertically stacked upload records
+   - Most recent uploads at top
+   - Collapsible record sections
+   - Status icons and progress bars
+
+### Timeline Visualization
+Each upload record shows its progression through time:
+1. Initial State
+   - File selection confirmation
+   - Size and format validation
+   - [WAIT] status indicator
+
+2. Processing Flow
+   - Real-time progress updates
+   - [>] processing indicator
+   - Current operation details
+   - Time elapsed display
+
+3. Completion State
+   - [OK] success indicator
+   - [TEMP] unpublished state
+   - [PUB] published state
+   - Timestamp for each stage
+
+## Record Management
+
+### Collapsible Records
+Each upload record provides:
+1. Collapsed View
+   - File name and timestamp
+   - Current status icon
+   - Progress indicator
+   - Quick actions (expand/collapse, cancel)
+
+2. Expanded View
+   - Detailed file information (name, size, dimensions)
+   - Processing timeline
+   - Generated previews (160px, 400px variants)
+   - Action buttons (excluding retry)
+   - Error details (if any)
+
+### Status Tracking
+Visual indicators for each stage:
+1. Pre-processing
+   - File validation status
+   - Size check results
+   - Format verification
+
+2. Active Processing
+   - Format conversion progress
+   - Variant generation (160px, 400px, 2048px)
+   - Analysis progress
+   - Storage status
+
+3. Post-processing
+   - Publication readiness
+   - Attribute review
+   - Visibility toggle
+   - Share options
+
+## User Interaction Flow
+
+### Upload Initiation
+1. File Selection
+   - Drop zone highlight on hover
+   - Format validation feedback
+   - Size limit warnings
+   - Immediate record creation
+
+2. Progress Monitoring
+   - Checkpoint progress bars
+   - Operation descriptions
+   - Time estimates
+   - Cancel option
+
+3. Completion Actions
+   - Review generated attributes
+   - Publish when ready
+      - Set visibility to public
+   - Share if desired
+
+### Error Recovery
+Clear visual feedback for issues:
+1. Error Detection
+   - [!] icon appears
+   - Record auto-expands
+   - Error description shown
+
+2. Recovery Options
+   - Cancel operation
+   - Remove record
+
+## Performance and Feedback
+
+### Visual Response Times
+Immediate feedback for:
+- File selection (< 100ms)
+- Status updates (real-time)
+- Preview generation (< 2s)
+- Error reporting (immediate)
+- Record expansion (< 50ms)
+
+### User Feedback
+Clear indicators for:
+1. Processing Status
+   - Current stage name
+   - Progress percentage
+   - Time remaining
+   - Operation details
+
+2. Results Display
+   - Generated variants
+   - Detected attributes
+   - Visibility state
+   - Share options
+
+## Record Lifecycle
+
+### Creation and Updates
+1. Initial Creation
+   - Instant record appearance
+   - Basic file details
+   - [WAIT] status
+   - Expand/collapse controls
+
+2. Active Updates
+   - Progress indicators
+   - Preview updates
+   - Status changes
+   - Time tracking
+
+3. Completion
+   - Final status update
+   - Visibility toggle
+   - History retention
+   - Cleanup options
+
+### Historical Access
+Records provide:
+1. Upload History
+   - Chronological listing
+   - Status filtering
+   - Search capabilities
+   - Batch management
+
+2. Performance Metrics
+   - Processing times
+   - Success rates
+   - Error patterns
+   - Usage statistics
+
+## Database Schema
+
+### Image Node
+Properties:
+- id: Unique identifier
+- title: Generated or user-provided title
+- description: Generated or user-provided description
+- fullUrl: Full size image (max 2048px)
+- previewUrl: Medium size preview (400px)
+- graphUrl: Graph view thumbnail (160px)
+- pHash: Perceptual hash for duplicate detection
+- width: Original image width
+- height: Original image height
+- createdAt: Upload timestamp
+- userId: Reference to uploader
+
+### Attribute Node
+Properties:
+- category: Classification of the attribute
+- value: The attribute value
+- context: Additional context about the attribute
+- prominence: Importance or visibility in the image
+- reasoning: Explanation for the attribute assignment
+
+### Relationships
+- (User)-[:UPLOADED]->(Image)
+- (Image)-[:HAS_ATTRIBUTE]->(Attribute)
+
+### User Details
+When retrieving an image, user details include:
+- id: User identifier
+- name: Display name
+- email: User email address
