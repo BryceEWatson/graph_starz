@@ -20,6 +20,7 @@ Graph Starz is a comprehensive open source project built with [Next.js](https://
 7. [Contributing](#contributing)
 8. [License](#license)
 9. [Code References](#code-references)
+10. [Future Work](#future-work)
 
 ## Overview
 
@@ -175,3 +176,38 @@ Below are links to important code and configuration files in the repository:
 
 - **BDD Documentation**:
   - [Product BDD Documentation](./Documentation/BDD/product/index.yml)
+
+## Future Work
+
+Graph Starz is continuously evolving. Here are our upcoming features and enhancements:
+
+### RAG-Enhanced Search System
+We're implementing a sophisticated Retrieval-Augmented Generation (RAG) system to enhance image search and discovery. Key features include:
+
+- **Hybrid Search Architecture**
+  - Semantic vector search for natural language queries
+  - Graph pattern matching for relationship-based queries
+  - Smart result ranking combining both approaches
+
+- **Performance Optimizations**
+  - Redis-based result caching
+  - Dynamic vector updates
+
+For detailed specifications and implementation plans, see:
+- [RAG Search Feature](./Documentation/New-Features/rag_search.feature)
+- [Technical Specification](./Documentation/New-Features/rag_search.specification)
+
+### Evaluation and Testing
+We're implementing comprehensive automated testing:
+- Synthetic test data generation
+- Performance benchmarking
+- Continuous evaluation in CI/CD pipeline
+
+### Implementation Timeline
+1. **Phase 1**: Vector search implementation
+2. **Phase 2**: Graph pattern matching
+3. **Phase 3**: Hybrid search integration
+4. **Phase 4**: Performance optimization
+5. **Phase 5**: Production deployment
+
+For more details about our development roadmap and technical specifications, visit our [Documentation](./Documentation/) directory.

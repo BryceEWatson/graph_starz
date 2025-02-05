@@ -67,3 +67,7 @@ Scenario: User account creation
 Specifications are created collaboratively by the "Three Amigos" (business, development, QA) to ensure alignment on expected outcomes211.
 They reduce ambiguity by formalizing examples and edge cases into a ubiquitous language understood by all stakeholders
 """
+
+---
+
+Great, now please add a "Future Work" section to the @README.md file so that highlights our future plans and links to the documentation files.
